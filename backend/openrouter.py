@@ -1,79 +1,35 @@
-"""OpenRouter API client for making LLM requests."""
+"""Compatibility transport for the original council, using shared providers."""
+import asyncio
+import json
+import logging
+import os
+from uuid import uuid4
+from app.providers import get_provider, ProviderError
+from app.providers.cache import ResponseCache
 
-import httpx
-from typing import List, Dict, Any, Optional
-from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+_cache = ResponseCache()
+log = logging.getLogger('mahthildis.legacy')
 
 
-async def query_model(
-    model: str,
-    messages: List[Dict[str, str]],
-    timeout: float = 120.0
-) -> Optional[Dict[str, Any]]:
-    """
-    Query a single model via OpenRouter API.
-
-    Args:
-        model: OpenRouter model identifier (e.g., "openai/gpt-4o")
-        messages: List of message dicts with 'role' and 'content'
-        timeout: Request timeout in seconds
-
-    Returns:
-        Response dict with 'content' and optional 'reasoning_details', or None if failed
-    """
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "model": model,
-        "messages": messages,
-    }
-
+async def query_model(model, messages, timeout=120.0):
+    request_id = str(uuid4())
+    key = _cache.key('openrouter', model, messages, 'council-v1', os.getenv('DEV_MODE'))
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            message = data['choices'][0]['message']
-
-            return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
-            }
-
-    except Exception as e:
-        print(f"Error querying model {model}: {e}")
+        result = _cache.get(key)
+        if result is None:
+            result = await get_provider('openrouter').generate(model, messages, timeout=timeout, request_id=request_id)
+            _cache.put(key, result)
+        return {'content': result.text,
+                'reasoning_details': result.metadata.get('raw_payload', {}).get('choices', [{}])[0].get('message', {}).get('reasoning_details'),
+                'provenance': {'response_id': result.response_id, 'provider': result.provider,
+                               'latency': result.latency, 'input_tokens': result.input_tokens,
+                               'output_tokens': result.output_tokens, 'cost': result.cost,
+                               'cache_hit': result.metadata.get('cache_hit', False)}}
+    except ProviderError as exc:
+        log.warning(json.dumps({'request_id': request_id, 'stage': 'provider', 'model': model, 'error': str(exc)}))
         return None
 
 
-async def query_models_parallel(
-    models: List[str],
-    messages: List[Dict[str, str]]
-) -> Dict[str, Optional[Dict[str, Any]]]:
-    """
-    Query multiple models in parallel.
-
-    Args:
-        models: List of OpenRouter model identifiers
-        messages: List of message dicts to send to each model
-
-    Returns:
-        Dict mapping model identifier to response dict (or None if failed)
-    """
-    import asyncio
-
-    # Create tasks for all models
-    tasks = [query_model(model, messages) for model in models]
-
-    # Wait for all to complete
-    responses = await asyncio.gather(*tasks)
-
-    # Map models to their responses
-    return {model: response for model, response in zip(models, responses)}
+async def query_models_parallel(models, messages):
+    responses = await asyncio.gather(*(query_model(model, messages) for model in models))
+    return dict(zip(models, responses))
