@@ -23,3 +23,5 @@ phase-7-knowledge-base: offline test suite passed; example executed successfully
 phase-8-aggregation: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 phase-9-confidence: offline test suite passed; example executed successfully. See commit for implementation and tests.
+
+phase-10-calibration: offline test suite passed; example executed successfully. See commit for implementation and tests.
