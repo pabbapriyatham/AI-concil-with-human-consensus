@@ -13,3 +13,5 @@ phase-2-response-normalizer: offline test suite passed; example executed success
 phase-3-claim-extraction: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 phase-4-claim-matching: offline test suite passed; example executed successfully. See commit for implementation and tests.
+
+phase-5-contradiction-engine: offline test suite passed; example executed successfully. See commit for implementation and tests.
