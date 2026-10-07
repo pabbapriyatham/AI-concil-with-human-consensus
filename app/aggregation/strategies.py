@@ -25,16 +25,18 @@ class AggregationStrategy(ABC):
 
 def factors_for(claim, claims, relations, evidence, assessments, reliability, domain, category):
     by_id = {c.claim_id: c for c in claims}
-    supporters, opponents = {claim.model}, set()
+    models = {c.model for c in claims if c.model != "human-validated-memory"}
+    supporters, opponents = ({claim.model} if claim.model in models else set()), set()
     for edge in relations:
         if claim.claim_id not in {edge.source_claim, edge.target_claim}:
             continue
         other = edge.target_claim if edge.source_claim == claim.claim_id else edge.source_claim
+        if by_id[other].model not in models:
+            continue
         if edge.relation_type in {"AGREEMENT", "DUPLICATE", "SUPPORT"} or (edge.relation_type == "ENTAILMENT" and edge.target_claim == claim.claim_id):
             supporters.add(by_id[other].model)
         elif edge.relation_type == "CONTRADICTION":
             opponents.add(by_id[other].model)
-    models = {c.model for c in claims}
     weights = {m: reliability.profile(m, domain, category)["weight"] for m in models}
     total = sum(weights.values()) or 1
     agreement = sum(weights[m] for m in supporters) / total
