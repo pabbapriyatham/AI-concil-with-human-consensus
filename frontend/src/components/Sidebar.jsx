@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -10,9 +9,9 @@ export default function Sidebar({
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <h1>LLM Council</h1>
+        <h1>Mahthildis</h1>
         <button className="new-conversation-btn" onClick={onNewConversation}>
-          + New Conversation
+          + New council conversation
         </button>
       </div>
 

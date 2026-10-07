@@ -31,3 +31,5 @@ phase-11-human-validation: offline test suite passed; example executed successfu
 phase-12-memory: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 phase-13-escalation: offline test suite passed; example executed successfully. See commit for implementation and tests.
+
+Phase 14: existing React frontend extended with consensus workspace; original council retained. Production build and ESLint pass. Two split-frame/UTF-8 SSE tests pass. Headless Edge walkthrough exercised claim cards, graph, evidence, correction/version history, future memory reuse and original council streaming without page errors. Browser fixtures are explicitly development-only.

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import ConsensusWorkspace from './components/ConsensusWorkspace';
 import { api } from './api';
 import './App.css';
 
 function App() {
+  const [workspace, setWorkspace] = useState('consensus');
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -12,14 +14,18 @@ function App() {
 
   // Load conversations on mount
   useEffect(() => {
-    loadConversations();
+    api.listConversations().then(setConversations).catch(error => console.error('Failed to load conversations:', error));
   }, []);
 
   // Load conversation details when selected
   useEffect(() => {
+    let active = true;
     if (currentConversationId) {
-      loadConversation(currentConversationId);
+      api.getConversation(currentConversationId).then(value => {
+        if (active) setCurrentConversation(value);
+      }).catch(error => console.error('Failed to load conversation:', error));
     }
+    return () => { active = false; };
   }, [currentConversationId]);
 
   const loadConversations = async () => {
@@ -31,16 +37,8 @@ function App() {
     }
   };
 
-  const loadConversation = async (id) => {
-    try {
-      const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-    }
-  };
-
   const handleNewConversation = async () => {
+    setWorkspace('council');
     try {
       const newConv = await api.createConversation();
       setConversations([
@@ -54,6 +52,7 @@ function App() {
   };
 
   const handleSelectConversation = (id) => {
+    setWorkspace('council');
     setCurrentConversationId(id);
   };
 
@@ -189,11 +188,17 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
       />
-      <ChatInterface
+      <div className="workbench">
+      <nav className="workspace-mode" aria-label="Engine mode">
+        <button className={workspace === 'consensus' ? 'active' : ''} onClick={() => setWorkspace('consensus')}>Consensus engine</button>
+        <button className={workspace === 'council' ? 'active' : ''} onClick={() => setWorkspace('council')}>Original council baseline</button>
+      </nav>
+      {workspace === 'consensus' ? <ConsensusWorkspace /> : <ChatInterface
         conversation={currentConversation}
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
-      />
+      />}
+      </div>
     </div>
   );
 }
