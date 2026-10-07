@@ -15,3 +15,5 @@ phase-3-claim-extraction: offline test suite passed; example executed successful
 phase-4-claim-matching: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 phase-5-contradiction-engine: offline test suite passed; example executed successfully. See commit for implementation and tests.
+
+phase-6-evidence: offline test suite passed; example executed successfully. See commit for implementation and tests.
