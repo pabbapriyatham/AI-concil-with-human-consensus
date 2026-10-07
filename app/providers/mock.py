@@ -1,5 +1,7 @@
 """Deterministic fixtures, never pretending to answer arbitrary questions."""
+
 from uuid import uuid4
+
 from .base import ModelProvider, ProviderResult
 
 
@@ -17,5 +19,6 @@ class MockProvider(ModelProvider):
             text = f"The Eiffel Tower was completed in {year} and is located in Paris."
         else:
             text = "I cannot determine this from the development fixtures."
-        return ProviderResult("mock", model, text, str(uuid4()), 0, 0, 0.0, 0.0,
-                              {"mock": True, "prompt_version": "mock-v1"})
+        return ProviderResult(
+            "mock", model, text, str(uuid4()), 0, 0, 0.0, 0.0, {"mock": True, "prompt_version": "mock-v1"}
+        )

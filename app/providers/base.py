@@ -1,4 +1,5 @@
 """Provider-independent contract; raw payloads stay available for auditing."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator

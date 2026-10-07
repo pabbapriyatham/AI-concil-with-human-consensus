@@ -1,9 +1,12 @@
 from typing import Literal
+
 from pydantic import Field
+
 from app.schemas import StrictModel, uid
 
-ClaimType = Literal["factual", "numerical", "temporal", "causal", "opinion",
-                    "recommendation", "procedural", "uncertain"]
+ClaimType = Literal[
+    "factual", "numerical", "temporal", "causal", "opinion", "recommendation", "procedural", "uncertain"
+]
 
 
 class Claim(StrictModel):

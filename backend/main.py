@@ -1,25 +1,44 @@
 """FastAPI backend for LLM Council."""
 
+import asyncio
+import json
+import logging
+import os
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List
+from uuid import UUID
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
-import uuid
-import json
-import asyncio
+
+from app.api import router as consensus_router
+from app.security import request_middleware
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import (
+    calculate_aggregate_rankings,
+    generate_conversation_title,
+    run_full_council,
+    stage1_collect_responses,
+    stage2_collect_rankings,
+    stage3_synthesize_final,
+)
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(message)s")
 
 app = FastAPI(title="Mahthildis Multi-Model Consensus Engine")
-from app.api import router as consensus_router
+
 app.include_router(consensus_router)
+app.middleware("http")(request_middleware)
 
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,16 +47,19 @@ app.add_middleware(
 
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
+
     pass
 
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
+
     content: str = Field(min_length=1, max_length=20000)
 
 
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
+
     id: str
     created_at: str
     title: str
@@ -46,6 +68,7 @@ class ConversationMetadata(BaseModel):
 
 class Conversation(BaseModel):
     """Full conversation with all messages."""
+
     id: str
     created_at: str
     title: str
@@ -55,7 +78,7 @@ class Conversation(BaseModel):
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API"}
+    return {"status": "ok", "service": "Mahthildis Multi-Model Consensus Engine"}
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
@@ -73,8 +96,9 @@ async def create_conversation(request: CreateConversationRequest):
 
 
 @app.get("/api/conversations/{conversation_id}", response_model=Conversation)
-async def get_conversation(conversation_id: str):
+async def get_conversation(conversation_id: UUID):
     """Get a specific conversation with all its messages."""
+    conversation_id = str(conversation_id)
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -82,12 +106,13 @@ async def get_conversation(conversation_id: str):
 
 
 @app.post("/api/conversations/{conversation_id}/message")
-async def send_message(conversation_id: str, request: SendMessageRequest):
+async def send_message(conversation_id: UUID, request: SendMessageRequest):
     """
     Send a message and run the 3-stage council process.
     Returns the complete response with all stages.
     """
     # Check if conversation exists
+    conversation_id = str(conversation_id)
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -104,34 +129,29 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         storage.update_conversation_title(conversation_id, title)
 
     # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
-    )
+    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(request.content)
 
     # Add assistant message with all stages
     storage.add_assistant_message(
         conversation_id,
         stage1_results,
         stage2_results,
-        stage3_result
+        stage3_result,
+        metadata=metadata,
     )
 
     # Return the complete response with metadata
-    return {
-        "stage1": stage1_results,
-        "stage2": stage2_results,
-        "stage3": stage3_result,
-        "metadata": metadata
-    }
+    return {"stage1": stage1_results, "stage2": stage2_results, "stage3": stage3_result, "metadata": metadata}
 
 
 @app.post("/api/conversations/{conversation_id}/message/stream")
-async def send_message_stream(conversation_id: str, request: SendMessageRequest):
+async def send_message_stream(conversation_id: UUID, request: SendMessageRequest):
     """
     Send a message and stream the 3-stage council process.
     Returns Server-Sent Events as each stage completes.
     """
     # Check if conversation exists
+    conversation_id = str(conversation_id)
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -153,6 +173,11 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             stage1_results = await stage1_collect_responses(request.content)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            if not stage1_results:
+                if title_task:
+                    title_task.cancel()
+                yield f"data: {json.dumps({'type': 'error', 'message': 'All model providers failed. Check credentials and configuration.'})}\n\n"
+                return
 
             # Stage 2: Collect rankings
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
@@ -176,15 +201,16 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
-                stage3_result
+                stage3_result,
+                metadata={"label_to_model": label_to_model, "aggregate_rankings": aggregate_rankings},
             )
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
-        except Exception as e:
+        except Exception:
             # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Council execution failed. Consult request logs.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -192,10 +218,15 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
+frontend_dist = os.getenv("FRONTEND_DIST_PATH")
+if frontend_dist and Path(frontend_dist).is_dir():
+    app.mount("/ui", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8001)

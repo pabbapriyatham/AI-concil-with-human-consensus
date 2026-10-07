@@ -1,4 +1,4 @@
-from backend.council import parse_ranking_from_text, calculate_aggregate_rankings
+from backend.council import calculate_aggregate_rankings, parse_ranking_from_text
 
 
 def test_rankings_preserved():

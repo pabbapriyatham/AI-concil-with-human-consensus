@@ -1,8 +1,10 @@
 import os
 from typing import Literal
+
 from pydantic import Field, field_validator
-from app.schemas import StrictModel
+
 from app.evidence.schemas import Evidence
+from app.schemas import StrictModel
 
 
 class ModelSpec(StrictModel):
@@ -15,8 +17,12 @@ class ModelSpec(StrictModel):
 
 
 def configured_models():
-    value = os.getenv("MAHTHILDIS_MODELS", "openai:gpt-5.1,gemini:gemini-3-pro-preview,anthropic:claude-sonnet-4-5")
-    return [ModelSpec(provider=entry.split(":", 1)[0], model=entry.split(":", 1)[1]) for entry in value.split(",")]
+    value = os.getenv(
+        "MAHTHILDIS_MODELS", "openai:gpt-5.1,gemini:gemini-3-pro-preview,anthropic:claude-sonnet-4-5"
+    )
+    return [
+        ModelSpec(provider=entry.split(":", 1)[0], model=entry.split(":", 1)[1]) for entry in value.split(",")
+    ]
 
 
 class ConsensusRequest(StrictModel):

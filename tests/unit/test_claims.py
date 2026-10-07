@@ -1,10 +1,18 @@
-from app.claims.extractor import extract_claims, claim_type
+from app.claims.extractor import claim_type, extract_claims
 from app.normalization import normalize_response
 from app.providers.base import ProviderResult
 
 
 def test_compound_atomic_and_dedup():
-    response = normalize_response(ProviderResult("p", "m", "The Eiffel Tower was completed in 1889 and is located in Paris. The Eiffel Tower is located in Paris.", "r"), "q")
+    response = normalize_response(
+        ProviderResult(
+            "p",
+            "m",
+            "The Eiffel Tower was completed in 1889 and is located in Paris. The Eiffel Tower is located in Paris.",
+            "r",
+        ),
+        "q",
+    )
     claims = extract_claims(response)
     assert len(claims) == 2
     assert claims[0].claim_type == "temporal"

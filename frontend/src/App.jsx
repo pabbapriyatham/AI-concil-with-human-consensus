@@ -6,6 +6,8 @@ import { api } from './api';
 import './App.css';
 
 function App() {
+  const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem('mahthildis-access-token') || '');
+  const [errorMessage, setErrorMessage] = useState('');
   const [workspace, setWorkspace] = useState('consensus');
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
@@ -60,6 +62,7 @@ function App() {
     if (!currentConversationId) return;
 
     setIsLoading(true);
+    setErrorMessage('');
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
@@ -162,6 +165,7 @@ function App() {
 
           case 'error':
             console.error('Stream error:', event.message);
+            setErrorMessage(event.message);
             setIsLoading(false);
             break;
 
@@ -171,12 +175,15 @@ function App() {
       });
     } catch (error) {
       console.error('Failed to send message:', error);
+      setErrorMessage(error.message);
       // Remove optimistic messages on error
       setCurrentConversation((prev) => ({
         ...prev,
         messages: prev.messages.slice(0, -2),
       }));
       setIsLoading(false);
+      const saved = await api.getConversation(currentConversationId).catch(() => null);
+      if (saved) setCurrentConversation(saved);
     }
   };
 
@@ -187,12 +194,18 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        disabled={isLoading}
       />
       <div className="workbench">
       <nav className="workspace-mode" aria-label="Engine mode">
         <button className={workspace === 'consensus' ? 'active' : ''} onClick={() => setWorkspace('consensus')}>Consensus engine</button>
         <button className={workspace === 'council' ? 'active' : ''} onClick={() => setWorkspace('council')}>Original council baseline</button>
+        <details className="access-settings"><summary>API access</summary>
+          <label>Backend access token<input type="password" value={accessToken} onChange={e => setAccessToken(e.target.value)} autoComplete="off" /></label>
+          <button onClick={() => { sessionStorage.setItem('mahthildis-access-token', accessToken); window.location.reload(); }}>Apply token</button>
+        </details>
       </nav>
+      {errorMessage && <div className="error-banner" role="alert">{errorMessage}</div>}
       {workspace === 'consensus' ? <ConsensusWorkspace /> : <ChatInterface
         conversation={currentConversation}
         onSendMessage={handleSendMessage}

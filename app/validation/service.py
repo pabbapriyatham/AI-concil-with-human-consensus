@@ -1,7 +1,9 @@
 from typing import Literal
+
 from pydantic import Field, model_validator
-from app.schemas import StrictModel, now
+
 from app.evidence.schemas import Evidence
+from app.schemas import StrictModel, now
 
 
 class ReviewRequest(StrictModel):
@@ -14,6 +16,8 @@ class ReviewRequest(StrictModel):
 
     @model_validator(mode="after")
     def check_action(self):
+        if any(e.source_type == "knowledge" for e in self.evidence):
+            raise ValueError("Knowledge evidence must come from validated stored history")
         if self.action == "CORRECT" and not self.corrected_claim:
             raise ValueError("A correction requires corrected_claim")
         if self.action == "ADD_EVIDENCE" and not self.evidence:
@@ -31,22 +35,29 @@ class ReviewService:
             raise KeyError(knowledge_id)
         changes = {}
         if request.action in {"ACCEPT", "CORRECT"}:
-            changes.update(status="VALIDATED", validation_state="human-reviewed", confidence=.9)
+            changes.update(status="VALIDATED", validation_state="human-reviewed", confidence=0.9)
         elif request.action == "REJECT":
             changes.update(status="REJECTED", validation_state="human-rejected", confidence=0)
         elif request.action == "MARK_UNCERTAIN":
-            changes.update(status="DISPUTED", validation_state="human-uncertain", confidence=.25)
+            changes.update(status="DISPUTED", validation_state="human-uncertain", confidence=0.25)
         if request.action == "CORRECT":
             changes["claim"] = request.corrected_claim
         if request.evidence:
             changes["evidence"] = old["evidence"] + [e.model_dump(mode="json") for e in request.evidence]
-        audit = {"action": request.action, "reviewer": request.reviewer, "explanation": request.explanation,
-                 "timestamp": now().isoformat(), "expected_version": request.expected_version,
-                 "original_claim": old["claim"], "corrected_claim": request.corrected_claim,
-                 "evidence": [e.model_dump(mode="json") for e in request.evidence]}
+        audit = {
+            "action": request.action,
+            "reviewer": request.reviewer,
+            "explanation": request.explanation,
+            "timestamp": now().isoformat(),
+            "expected_version": request.expected_version,
+            "original_claim": old["claim"],
+            "corrected_claim": request.corrected_claim,
+            "evidence": [e.model_dump(mode="json") for e in request.evidence],
+        }
         # Version update + validation audit share one transaction.
-        result = self.store.append_version(knowledge_id, request.expected_version, changes,
-                                          request.reviewer, request.explanation, audit)
+        result = self.store.append_version(
+            knowledge_id, request.expected_version, changes, request.reviewer, request.explanation, audit
+        )
         for item in request.evidence:
             self.store.add_evidence(item)
         return result

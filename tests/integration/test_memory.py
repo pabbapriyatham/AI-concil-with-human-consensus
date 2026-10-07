@@ -1,25 +1,40 @@
+from app.claims.schemas import Claim
+from app.evidence import EvidenceEngine
 from app.knowledge.store import Store
-from app.validation import ReviewService, ReviewRequest
 from app.retrieval import RetrievalService
 from app.retrieval.service import chunk_text
-from app.evidence import EvidenceEngine
-from app.claims.schemas import Claim
+from app.validation import ReviewRequest, ReviewService
 
 
 def test_correction_retrieved_and_rejection_removed():
     store = Store("sqlite:///:memory:", initialize=True)
     item = store.create_knowledge("The event happened in 2020.")
     reviews = ReviewService(store)
-    reviews.review(item["knowledge_id"], ReviewRequest(action="CORRECT", expected_version=1, reviewer="human",
-                   explanation="Official source", corrected_claim="The event happened in 2021."))
+    reviews.review(
+        item["knowledge_id"],
+        ReviewRequest(
+            action="CORRECT",
+            expected_version=1,
+            reviewer="human",
+            explanation="Official source",
+            corrected_claim="The event happened in 2021.",
+        ),
+    )
     retrieval = RetrievalService(store)
     results = retrieval.retrieve("The event happened in 2020.")
     assert results[0].text == "The event happened in 2021."
-    claim = Claim(response_id="r", model="m", claim_text="The event happened in 2020.",
-                  normalized_claim="event", claim_type="temporal")
+    claim = Claim(
+        response_id="r",
+        model="m",
+        claim_text="The event happened in 2020.",
+        normalized_claim="event",
+        claim_type="temporal",
+    )
     assert EvidenceEngine().assess(claim, results[0]).verdict == "CONTRADICTS"
-    reviews.review(item["knowledge_id"], ReviewRequest(action="REJECT", expected_version=2,
-                   reviewer="human", explanation="Review overturned"))
+    reviews.review(
+        item["knowledge_id"],
+        ReviewRequest(action="REJECT", expected_version=2, reviewer="human", explanation="Review overturned"),
+    )
     assert retrieval.retrieve("The event happened in 2020.") == []
 
 

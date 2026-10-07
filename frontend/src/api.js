@@ -1,16 +1,17 @@
 import { consumeSSE } from './sse';
+import { accessHeaders } from './access';
 /**
  * API client for the LLM Council backend.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001';
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
 
 export const api = {
   /**
    * List all conversations.
    */
   async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
+    const response = await fetch(`${API_BASE}/api/conversations`, { headers: accessHeaders() });
     if (!response.ok) {
       throw new Error('Failed to list conversations');
     }
@@ -25,6 +26,7 @@ export const api = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...accessHeaders(),
       },
       body: JSON.stringify({}),
     });
@@ -39,7 +41,7 @@ export const api = {
    */
   async getConversation(conversationId) {
     const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`
+      `${API_BASE}/api/conversations/${conversationId}`, { headers: accessHeaders() }
     );
     if (!response.ok) {
       throw new Error('Failed to get conversation');
@@ -57,6 +59,7 @@ export const api = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...accessHeaders(),
         },
         body: JSON.stringify({ content }),
       }
@@ -81,6 +84,7 @@ export const api = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...accessHeaders(),
         },
         body: JSON.stringify({ content }),
       }

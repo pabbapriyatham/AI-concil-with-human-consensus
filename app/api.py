@@ -1,13 +1,15 @@
 import os
 from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field, HttpUrl
-from app.schemas import StrictModel
+
+from app.knowledge.store import StaleVersion, Store
 from app.orchestration import ConsensusEngine, ConsensusRequest
 from app.orchestration.schemas import configured_models
-from app.knowledge.store import Store, StaleVersion
-from app.validation import ReviewService, ReviewRequest
 from app.retrieval import RetrievalService
+from app.schemas import StrictModel
+from app.validation import ReviewRequest, ReviewService
 
 router = APIRouter(prefix="/api/consensus", tags=["Mahthildis"])
 
@@ -20,12 +22,16 @@ def get_store():
 
 @router.get("/config")
 def configuration():
-    return {"models": [m.model_dump() for m in configured_models()],
-            "development_mode": os.getenv("DEV_MODE", "false").lower() == "true",
-            "embedding_backend": os.getenv("EMBEDDING_BACKEND", "hash"),
-            "nli_backend": os.getenv("NLI_BACKEND", "structured"),
-            "database": "sqlite-development" if os.getenv("DATABASE_URL", "sqlite:").startswith("sqlite") else "postgresql",
-            "vector_store": "qdrant" if os.getenv("QDRANT_URL") else "memory-development"}
+    return {
+        "models": [m.model_dump() for m in configured_models()],
+        "development_mode": os.getenv("DEV_MODE", "false").lower() == "true",
+        "embedding_backend": os.getenv("EMBEDDING_BACKEND", "hash"),
+        "nli_backend": os.getenv("NLI_BACKEND", "structured"),
+        "database": "sqlite-development"
+        if os.getenv("DATABASE_URL", "sqlite:").startswith("sqlite")
+        else "postgresql",
+        "vector_store": "qdrant" if os.getenv("QDRANT_URL") else "memory-development",
+    }
 
 
 @router.post("/executions")
@@ -68,7 +74,7 @@ class DocumentRequest(StrictModel):
     text: str = Field(min_length=1, max_length=200000)
     source: str = Field(min_length=1, max_length=500)
     source_type: str = Field(default="document", pattern="^(document|dataset|web)$")
-    quality: float = Field(default=.5, ge=0, le=1)
+    quality: float = Field(default=0.5, ge=0, le=1)
     url: HttpUrl | None = None
 
 
@@ -76,6 +82,7 @@ class DocumentRequest(StrictModel):
 def ingest(request: DocumentRequest, store=Depends(get_store)):
     if not request.text.strip():
         raise HTTPException(422, "Document is empty")
-    items = RetrievalService(store).ingest(request.text, request.source, request.source_type,
-                                           request.quality, request.url)
+    items = RetrievalService(store).ingest(
+        request.text, request.source, request.source_type, request.quality, request.url
+    )
     return {"evidence": [e.model_dump(mode="json") for e in items], "chunks": len(items)}

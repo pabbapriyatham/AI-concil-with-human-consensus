@@ -1,14 +1,18 @@
+import hashlib
 import os
 import re
-import hashlib
 from functools import lru_cache
+
 import numpy as np
 
 
 def canonical(text):
     text = text.lower()
-    for pattern, replacement in [(r"\b(occurred|took place)\b", "happened"),
-                                  (r"\bduring the year\b", "in"), (r"\bfinished\b", "completed")]:
+    for pattern, replacement in [
+        (r"\b(occurred|took place)\b", "happened"),
+        (r"\bduring the year\b", "in"),
+        (r"\bfinished\b", "completed"),
+    ]:
         text = re.sub(pattern, replacement, text)
     return text
 
@@ -19,6 +23,7 @@ class Embeddings:
         self.model_id = model or os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         if self.backend == "sentence-transformers":
             from sentence_transformers import SentenceTransformer
+
             self.model = SentenceTransformer(self.model_id)
             self.dimension = self.model.get_sentence_embedding_dimension()
         elif self.backend == "hash":
@@ -37,7 +42,9 @@ class Embeddings:
                 tokens = re.findall(r"\w+", canonical(text))
                 features = tokens + [a + " " + b for a, b in zip(tokens, tokens[1:])]
                 for feature in features:
-                    slot = int.from_bytes(hashlib.sha256(feature.encode()).digest()[:4], "big") % self.dimension
+                    slot = (
+                        int.from_bytes(hashlib.sha256(feature.encode()).digest()[:4], "big") % self.dimension
+                    )
                     vectors[index, slot] += 1
                 norm = np.linalg.norm(vectors[index])
                 if norm:

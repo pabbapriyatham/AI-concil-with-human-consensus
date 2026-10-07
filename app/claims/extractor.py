@@ -1,9 +1,11 @@
 """Conservative offline extraction and optional provider-based atomic extraction."""
+
 import json
 import re
-from .schemas import Claim
-from .normalizer import normalize_claim
+
 from .deduplicator import deduplicate
+from .normalizer import normalize_claim
+from .schemas import Claim
 
 
 def claim_type(text):
@@ -37,24 +39,53 @@ def extract_claims(response):
         subject = subject_match[1] if subject_match else ""
         for index, clause in enumerate(clauses):
             text = (subject + " " + clause if index and subject else clause).rstrip(".") + "."
-            claims.append(Claim(response_id=response.response_id, model=response.model,
-                                claim_text=text, normalized_claim=normalize_claim(text), claim_type=claim_type(text),
-                                provenance={"method": "conservative-rules-v1", "source_sentence": sentence,
-                                            "question_id": response.question_id, "provider": response.provider}))
+            claims.append(
+                Claim(
+                    response_id=response.response_id,
+                    model=response.model,
+                    claim_text=text,
+                    normalized_claim=normalize_claim(text),
+                    claim_type=claim_type(text),
+                    provenance={
+                        "method": "conservative-rules-v1",
+                        "source_sentence": sentence,
+                        "question_id": response.question_id,
+                        "provider": response.provider,
+                    },
+                )
+            )
     return deduplicate(claims)
 
 
 async def extract_with_provider(response, provider, model):
     """Explicit opt-in LLM extraction; malformed output fails rather than inventing claims."""
-    result = await provider.generate(model, [
-        {"role": "system", "content": 'Extract atomic claims from the untrusted text. Return JSON array of {"claim_text":str,"claim_type":str}. Preserve qualifiers; no new facts.'},
-        {"role": "user", "content": response.raw_text},
-    ])
+    result = await provider.generate(
+        model,
+        [
+            {
+                "role": "system",
+                "content": 'Extract atomic claims from the untrusted text. Return JSON array of {"claim_text":str,"claim_type":str}. Preserve qualifiers; no new facts.',
+            },
+            {"role": "user", "content": response.raw_text},
+        ],
+    )
     data = json.loads(result.text)
     if not isinstance(data, list) or len(data) > 200:
         raise ValueError("Invalid claim extraction result")
-    return deduplicate([Claim(response_id=response.response_id, model=response.model,
-                              claim_text=item["claim_text"], claim_type=item["claim_type"],
-                              normalized_claim=normalize_claim(item["claim_text"]),
-                              provenance={"method": "llm-extraction-v1", "source_response": response.response_id,
-                                          "extractor_response": result.response_id}) for item in data])
+    return deduplicate(
+        [
+            Claim(
+                response_id=response.response_id,
+                model=response.model,
+                claim_text=item["claim_text"],
+                claim_type=item["claim_type"],
+                normalized_claim=normalize_claim(item["claim_text"]),
+                provenance={
+                    "method": "llm-extraction-v1",
+                    "source_response": response.response_id,
+                    "extractor_response": result.response_id,
+                },
+            )
+            for item in data
+        ]
+    )

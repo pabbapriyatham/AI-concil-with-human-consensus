@@ -1,5 +1,7 @@
 """Portable calibration fitting and held-out diagnostics; JSON artifacts only."""
+
 import math
+
 import numpy as np
 
 
@@ -24,10 +26,21 @@ def calibration_metrics(scores, labels, bins=10):
             confidence = sum(p for p, _ in rows) / len(rows)
             accuracy = sum(y for _, y in rows) / len(rows)
             ece += len(rows) / len(scores) * abs(confidence - accuracy)
-            curve.append({"lower": index / bins, "upper": (index + 1) / bins,
-                          "count": len(rows), "confidence": confidence, "accuracy": accuracy})
-    return {"brier": sum((p - y)**2 for p, y in zip(scores, labels)) / len(scores),
-            "ece": ece, "reliability_diagram": curve, "samples": len(scores)}
+            curve.append(
+                {
+                    "lower": index / bins,
+                    "upper": (index + 1) / bins,
+                    "count": len(rows),
+                    "confidence": confidence,
+                    "accuracy": accuracy,
+                }
+            )
+    return {
+        "brier": sum((p - y) ** 2 for p, y in zip(scores, labels)) / len(scores),
+        "ece": ece,
+        "reliability_diagram": curve,
+        "samples": len(scores),
+    }
 
 
 def fit_isotonic(scores, labels):
@@ -39,10 +52,18 @@ def fit_isotonic(scores, labels):
     blocks = []
     for p, ys in sorted(groups.items()):
         blocks.append({"xs": [p], "sum": sum(ys), "weight": len(ys)})
-        while len(blocks) > 1 and blocks[-2]["sum"] / blocks[-2]["weight"] > blocks[-1]["sum"] / blocks[-1]["weight"]:
+        while (
+            len(blocks) > 1
+            and blocks[-2]["sum"] / blocks[-2]["weight"] > blocks[-1]["sum"] / blocks[-1]["weight"]
+        ):
             right, left = blocks.pop(), blocks.pop()
-            blocks.append({"xs": left["xs"] + right["xs"], "sum": left["sum"] + right["sum"],
-                           "weight": left["weight"] + right["weight"]})
+            blocks.append(
+                {
+                    "xs": left["xs"] + right["xs"],
+                    "sum": left["sum"] + right["sum"],
+                    "weight": left["weight"] + right["weight"],
+                }
+            )
     x, y = [], []
     for block in blocks:
         x.extend(block["xs"])
@@ -60,8 +81,8 @@ def fit_platt(scores, labels, iterations=2000):
     for _ in range(iterations):
         pred = 1 / (1 + np.exp(-np.clip(a * logits + b, -40, 40)))
         error = pred - targets
-        a -= .02 * float(np.mean(error * logits) + .001 * a)
-        b -= .02 * float(np.mean(error))
+        a -= 0.02 * float(np.mean(error * logits) + 0.001 * a)
+        b -= 0.02 * float(np.mean(error))
     return {"method": "platt-logistic", "a": a, "b": b}
 
 
@@ -84,12 +105,19 @@ def held_out_experiment(train, test, method="isotonic"):
         raise ValueError("Unknown fit method")
     artifact = fit([r["score"] for r in train], [r["correct"] for r in train])
     scores, labels = [r["score"] for r in test], [r["correct"] for r in test]
-    return {"artifact": artifact, "train_ids": [r["id"] for r in train], "test_ids": [r["id"] for r in test],
-            "raw": calibration_metrics(scores, labels),
-            "calibrated": calibration_metrics(predict_calibrated(artifact, scores), labels),
-            "limitation": "Small development samples do not establish calibration or generalization."}
+    return {
+        "artifact": artifact,
+        "train_ids": [r["id"] for r in train],
+        "test_ids": [r["id"] for r in test],
+        "raw": calibration_metrics(scores, labels),
+        "calibrated": calibration_metrics(predict_calibrated(artifact, scores), labels),
+        "limitation": "Small development samples do not establish calibration or generalization.",
+    }
 
 
 def reliability_svg(metrics):
-    dots = "".join(f'<circle cx="{40 + 320 * r["confidence"]:.1f}" cy="{360 - 320 * r["accuracy"]:.1f}" r="5" fill="#2964b0"/>' for r in metrics["reliability_diagram"])
+    dots = "".join(
+        f'<circle cx="{40 + 320 * r["confidence"]:.1f}" cy="{360 - 320 * r["accuracy"]:.1f}" r="5" fill="#2964b0"/>'
+        for r in metrics["reliability_diagram"]
+    )
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="white"/><path d="M40 40V360H360 M40 360L360 40" stroke="#888" fill="none"/>{dots}<text x="100" y="390">Predicted confidence</text><text x="45" y="25">Observed accuracy</text></svg>'

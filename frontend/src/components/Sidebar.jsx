@@ -5,12 +5,13 @@ export default function Sidebar({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  disabled,
 }) {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
         <h1>Mahthildis</h1>
-        <button className="new-conversation-btn" onClick={onNewConversation}>
+        <button className="new-conversation-btn" onClick={onNewConversation} disabled={disabled}>
           + New council conversation
         </button>
       </div>
@@ -25,7 +26,7 @@ export default function Sidebar({
               className={`conversation-item ${
                 conv.id === currentConversationId ? 'active' : ''
               }`}
-              onClick={() => onSelectConversation(conv.id)}
+              onClick={() => { if (!disabled) onSelectConversation(conv.id); }}
             >
               <div className="conversation-title">
                 {conv.title || 'New Conversation'}

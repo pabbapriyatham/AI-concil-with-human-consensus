@@ -2,13 +2,25 @@ import os
 import re
 from itertools import combinations
 from typing import Literal
+
 from pydantic import Field
-from app.schemas import StrictModel, uid
+
 from app.claims.normalizer import normalize_claim
+from app.schemas import StrictModel, uid
+
 from .semantic import canonical, get_embeddings
 
-RelationType = Literal["SUPPORT", "ENTAILMENT", "AGREEMENT", "PARTIAL_AGREEMENT",
-                       "NEUTRAL", "DIVERGENCE", "CONTRADICTION", "DUPLICATE", "UNSUPPORTED"]
+RelationType = Literal[
+    "SUPPORT",
+    "ENTAILMENT",
+    "AGREEMENT",
+    "PARTIAL_AGREEMENT",
+    "NEUTRAL",
+    "DIVERGENCE",
+    "CONTRADICTION",
+    "DUPLICATE",
+    "UNSUPPORTED",
+]
 
 
 class Relation(StrictModel):
@@ -33,7 +45,9 @@ def structured(a, b):
         skeleton_a = re.sub(r"\b\d+(?:\.\d+)?\b", "<value>", a)
         skeleton_b = re.sub(r"\b\d+(?:\.\d+)?\b", "<value>", b)
         # Different quantities/ranges/comparators are not automatically contradictions.
-        if skeleton_a == skeleton_b and not re.search(r"\b(about|approximately|between|at least|over|under|may)\b", a + " " + b):
+        if skeleton_a == skeleton_b and not re.search(
+            r"\b(about|approximately|between|at least|over|under|may)\b", a + " " + b
+        ):
             return "CONTRADICTION", 0.9
     pattern = r"(.+? (?:is|was) (?:located|situated) in) (.+)"
     ma, mb = re.fullmatch(pattern, a), re.fullmatch(pattern, b)
@@ -45,10 +59,12 @@ def structured(a, b):
 
 class NLI:
     """Model card: named labels, never infer opaque LABEL_0 order."""
+
     def __init__(self, classifier=None):
         self.model_id = os.getenv("NLI_MODEL", "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli")
         if classifier is None:
             from transformers import pipeline
+
             classifier = pipeline("text-classification", model=self.model_id)
         self.classifier = classifier
 
@@ -82,8 +98,11 @@ class RelationEngine:
             kind, score = self.nli.predict(a, b)
             return kind, score, self.nli.model_id
         # Similarity alone does not prove factual equivalence.
-        return ("PARTIAL_AGREEMENT" if match["match"] == "SIMILAR" else "DIVERGENCE",
-                min(0.65, max(0.0, match["similarity"])), self.embeddings.method)
+        return (
+            "PARTIAL_AGREEMENT" if match["match"] == "SIMILAR" else "DIVERGENCE",
+            min(0.65, max(0.0, match["similarity"])),
+            self.embeddings.method,
+        )
 
     def graph(self, claims):
         edges = []
@@ -92,7 +111,14 @@ class RelationEngine:
                 continue
             kind, score, method = self.compare_text(a.claim_text, b.claim_text)
             if kind != "NEUTRAL":
-                edges.append(Relation(source_claim=a.claim_id, target_claim=b.claim_id,
-                                      relation_type=kind, confidence=score, method=method,
-                                      provenance={"models": [a.model, b.model], "direction": "source_to_target"}))
+                edges.append(
+                    Relation(
+                        source_claim=a.claim_id,
+                        target_claim=b.claim_id,
+                        relation_type=kind,
+                        confidence=score,
+                        method=method,
+                        provenance={"models": [a.model, b.model], "direction": "source_to_target"},
+                    )
+                )
         return edges

@@ -2,10 +2,26 @@
 
 import json
 import os
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+import tempfile
+import threading
+from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
 from .config import DATA_DIR
+
+_write_lock = threading.RLock()
+
+
+def locked(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _write_lock:
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 def ensure_data_dir():
@@ -15,7 +31,8 @@ def ensure_data_dir():
 
 def get_conversation_path(conversation_id: str) -> str:
     """Get the file path for a conversation."""
-    return os.path.join(DATA_DIR, f"{conversation_id}.json")
+    identifier = str(UUID(str(conversation_id)))
+    return os.path.join(DATA_DIR, f"{identifier}.json")
 
 
 def create_conversation(conversation_id: str) -> Dict[str, Any]:
@@ -32,15 +49,13 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
 
     conversation = {
         "id": conversation_id,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "title": "New Conversation",
-        "messages": []
+        "messages": [],
     }
 
     # Save to file
-    path = get_conversation_path(conversation_id)
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
+    save_conversation(conversation)
 
     return conversation
 
@@ -60,10 +75,11 @@ def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
     if not os.path.exists(path):
         return None
 
-    with open(path, 'r') as f:
+    with open(path, "r", encoding="utf8") as f:
         return json.load(f)
 
 
+@locked
 def save_conversation(conversation: Dict[str, Any]):
     """
     Save a conversation to storage.
@@ -73,9 +89,20 @@ def save_conversation(conversation: Dict[str, Any]):
     """
     ensure_data_dir()
 
-    path = get_conversation_path(conversation['id'])
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
+    path = get_conversation_path(conversation["id"])
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf8", dir=DATA_DIR, suffix=".tmp", delete=False
+        ) as f:
+            temporary = f.name
+            json.dump(conversation, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def list_conversations() -> List[Dict[str, Any]]:
@@ -89,17 +116,19 @@ def list_conversations() -> List[Dict[str, Any]]:
 
     conversations = []
     for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json'):
+        if filename.endswith(".json"):
             path = os.path.join(DATA_DIR, filename)
-            with open(path, 'r') as f:
+            with open(path, "r", encoding="utf8") as f:
                 data = json.load(f)
                 # Return metadata only
-                conversations.append({
-                    "id": data["id"],
-                    "created_at": data["created_at"],
-                    "title": data.get("title", "New Conversation"),
-                    "message_count": len(data["messages"])
-                })
+                conversations.append(
+                    {
+                        "id": data["id"],
+                        "created_at": data["created_at"],
+                        "title": data.get("title", "New Conversation"),
+                        "message_count": len(data["messages"]),
+                    }
+                )
 
     # Sort by creation time, newest first
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
@@ -107,6 +136,7 @@ def list_conversations() -> List[Dict[str, Any]]:
     return conversations
 
 
+@locked
 def add_user_message(conversation_id: str, content: str):
     """
     Add a user message to a conversation.
@@ -119,19 +149,18 @@ def add_user_message(conversation_id: str, content: str):
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["messages"].append({
-        "role": "user",
-        "content": content
-    })
+    conversation["messages"].append({"role": "user", "content": content})
 
     save_conversation(conversation)
 
 
+@locked
 def add_assistant_message(
     conversation_id: str,
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
-    stage3: Dict[str, Any]
+    stage3: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
 ):
     """
     Add an assistant message with all 3 stages to a conversation.
@@ -146,16 +175,20 @@ def add_assistant_message(
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["messages"].append({
-        "role": "assistant",
-        "stage1": stage1,
-        "stage2": stage2,
-        "stage3": stage3
-    })
+    conversation["messages"].append(
+        {
+            "role": "assistant",
+            "stage1": stage1,
+            "stage2": stage2,
+            "stage3": stage3,
+            "metadata": metadata or {},
+        }
+    )
 
     save_conversation(conversation)
 
 
+@locked
 def update_conversation_title(conversation_id: str, title: str):
     """
     Update the title of a conversation.

@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
-from pydantic import Field, HttpUrl
-from app.schemas import StrictModel, uid, now
+
+from pydantic import AwareDatetime, Field, HttpUrl
+
+from app.schemas import StrictModel, now, uid
 
 
 class Evidence(StrictModel):
@@ -10,8 +11,8 @@ class Evidence(StrictModel):
     source: str = Field(min_length=1, max_length=500)
     source_type: Literal["document", "dataset", "web", "knowledge", "human"]
     url: HttpUrl | None = None
-    retrieval_time: datetime = Field(default_factory=now)
-    published_at: datetime | None = None
+    retrieval_time: AwareDatetime = Field(default_factory=now)
+    published_at: AwareDatetime | None = None
     relevance_score: float = Field(default=0, ge=0, le=1)
     source_quality: float = Field(default=0.5, ge=0, le=1)
     provenance: dict = Field(default_factory=dict)

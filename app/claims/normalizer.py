@@ -1,4 +1,5 @@
 import re
+
 from app.normalization import normalize_text
 
 

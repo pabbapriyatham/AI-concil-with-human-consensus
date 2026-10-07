@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
-from app.providers.base import ProviderResult
+
 from app.normalization import normalize_response
+from app.providers.base import ProviderResult
 
 
 def test_raw_provenance_and_immutability():

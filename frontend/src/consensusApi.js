@@ -1,9 +1,10 @@
-const BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8001';
+import { accessHeaders } from './access';
+const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
 
 async function request(path, body) {
   const response = await fetch(`${BASE}/api/consensus${path}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...accessHeaders() },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) {
