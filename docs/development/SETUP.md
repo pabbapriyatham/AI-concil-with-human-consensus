@@ -45,7 +45,8 @@ connecting a production database. It is supplied for deployment testing, not a c
 that deployment was executed here. Keep local services on loopback. For public access,
 set PUBLIC_DEPLOYMENT=true and API_TOKEN, and use HTTPS/access controls.
 
-Original D:/ai council was Windows read-only. Work is on codex/mahthildis in a
-separate clone with original Git history. To transfer after fixing folder permission,
-fetch this clone's codex/mahthildis branch from the original checkout and fast-forward
-a new branch; inspect the diff first. No original data was deleted or migrated.
+The complete project now lives in D:/ai council on codex/mahthildis with original
+Git history preserved. Folder permissions allow the current user to modify it.
+The move included dependencies, artifacts and development data; 16,862 files were
+hash-verified before removing the old development copy. The Python environment
+was repaired for the new path, and Python tests, SSE tests and the frontend build passed.

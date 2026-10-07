@@ -11,8 +11,8 @@ adapters and PostgreSQL/Qdrant/ML integration paths. Mock end-to-end flows are v
 Live providers, downloaded embedding/NLI weights, PostgreSQL and Qdrant services still
 need deployment validation. No claim of calibrated correctness or research superiority.
 
-The original `D:\ai council` is Windows read-only. This implementation is in a
-separate writable clone on branch `codex/mahthildis`; see setup docs for transfer.
+The complete project is in `D:\ai council` on branch `codex/mahthildis`.
+Folder permissions and the Python environment were repaired during the verified move.
 
 ## Run locally (PowerShell)
 

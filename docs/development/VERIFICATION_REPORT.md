@@ -31,8 +31,10 @@ accuracy, statistical significance or human-review effectiveness.
 
 ## Workspace and data
 
-Original D:/ai council remains unchanged because Windows grants read-only access.
-Implementation lives in a history-preserving writable clone on codex/mahthildis.
+Implementation and all runtime files now live in D:/ai council on codex/mahthildis.
+The verified move preserved the original Git history and upstream remote. All
+16,862 source files matched their destination hashes before the old copy was removed.
+The relocated Python environment, Python tests, SSE tests and frontend build passed.
 Each phase has a separate tested commit. The upstream README is preserved.
 Initial browser fixture validations in the development database were retired through
 new SUPERSEDED versions, retaining audit history. Final browser validation uses
