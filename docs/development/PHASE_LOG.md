@@ -21,3 +21,5 @@ phase-6-evidence: offline test suite passed; example executed successfully. See 
 phase-7-knowledge-base: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 phase-8-aggregation: offline test suite passed; example executed successfully. See commit for implementation and tests.
+
+phase-9-confidence: offline test suite passed; example executed successfully. See commit for implementation and tests.
