@@ -12,5 +12,5 @@ subprocess.run([sys.executable, "-m", "pytest", "-q"], check=True)
 subprocess.run([sys.executable, "-c", args.example], check=True)
 with Path("docs/development/PHASE_LOG.md").open("a", encoding="utf8") as file:
     file.write(f"\n{args.phase}: offline test suite passed; example executed successfully. See commit for implementation and tests.\n")
-subprocess.run(["git", "add", "app", "tests", "scripts", "docs"], check=True)
+subprocess.run(["git", "add", "app", "tests", "scripts", "docs", "migrations", "alembic.ini", "pyproject.toml"], check=True)
 subprocess.run(["git", "commit", "-m", args.phase], check=True)
