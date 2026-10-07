@@ -7,3 +7,5 @@ Phase 1: provider HTTP contracts tested without network; mock Eiffel example,
 cache provenance, sanitized errors, 429 retry and baseline rankings verified.
 Native adapters use documented REST endpoints. stream currently offers a
 buffered fallback, explicitly reported by get_model_info.
+
+phase-2-response-normalizer: offline test suite passed; example executed successfully. See commit for implementation and tests.
