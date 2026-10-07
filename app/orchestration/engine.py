@@ -24,9 +24,10 @@ cache = ResponseCache()
 
 
 class ConsensusEngine:
-    def __init__(self, store, provider_factory=get_provider, reliability=None):
+    def __init__(self, store, provider_factory=get_provider, reliability=None, confidence_enabled=True):
         self.store, self.provider_factory = store, provider_factory
         self.reliability = reliability or ReliabilityProfiles()
+        self.confidence_enabled = confidence_enabled
 
     async def run(self, request):
         started = time.perf_counter()
@@ -109,6 +110,16 @@ class ConsensusEngine:
             decisions = STRATEGIES[request.aggregation].aggregate(candidates, edges, list(evidence.values()),
                 assessments, self.reliability, request.domain, request.category)
             confidence = ConfidenceEngine().answer(decisions, len(responses), len(consulted))
+            if not self.confidence_enabled:
+                # Research ablation: aggregation scores are not a confidence model.
+                confidence = {"claims": [{"claim_id": d.claim_id, "raw_confidence": d.score,
+                              "uncertainty": 1 - d.score, "label": "aggregation score", "reasons": d.reasons}
+                             for d in decisions],
+                              "raw_confidence": sum(d.score for d in decisions) / max(1, len(decisions)),
+                              "uncertainty": 1 - sum(d.score for d in decisions) / max(1, len(decisions)),
+                              "label": "aggregation score", "calibrated": False,
+                              "model_coverage": len(responses) / max(1, len(consulted)),
+                              "explanation": "Confidence subsystem disabled for research ablation; aggregation scores only."}
             record("claims_relations_evidence_aggregation_confidence", stage_start,
                    claims=len(candidates), relations=len(edges), evidence=len(evidence))
             return candidates, edges, assessments, decisions, confidence, memory_responses

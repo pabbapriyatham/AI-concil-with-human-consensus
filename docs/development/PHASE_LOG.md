@@ -33,3 +33,5 @@ phase-12-memory: offline test suite passed; example executed successfully. See c
 phase-13-escalation: offline test suite passed; example executed successfully. See commit for implementation and tests.
 
 Phase 14: existing React frontend extended with consensus workspace; original council retained. Production build and ESLint pass. Two split-frame/UTF-8 SSE tests pass. Headless Edge walkthrough exercised claim cards, graph, evidence, correction/version history, future memory reuse and original council streaming without page errors. Browser fixtures are explicitly development-only.
+
+Phase 15: 42 controlled synthetic registry examples cover all seven categories. Full six-system A-F evaluation (252 records plus repeated-run consistency checks) completed; JSON/CSV and six SVG reliability diagrams exported. Dataset schema, isolation, ablation exports and abstention metrics tested. 31 Python tests pass. Mock/oracle-reviewer results are explicitly development harness checks, not real-model performance or statistical significance.
