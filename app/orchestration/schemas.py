@@ -18,7 +18,7 @@ class ModelSpec(StrictModel):
 
 def configured_models():
     value = os.getenv(
-        "MAHTHILDIS_MODELS", "gemini:gemini-3.8-flash,groq:openai/gpt-oss-120b"
+        "MAHTHILDIS_MODELS", "gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-120b"
     )
     return [
         ModelSpec(provider=entry.split(":", 1)[0], model=entry.split(":", 1)[1]) for entry in value.split(",")

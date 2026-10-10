@@ -31,9 +31,9 @@ GEMINI_API_KEY=your-google-ai-studio-key
 GROQ_API_KEY=your-groqcloud-key
 OPENROUTER_API_KEY=your-openrouter-key
 DEV_MODE=false
-MAHTHILDIS_MODELS=gemini:gemini-3.8-flash,groq:openai/gpt-oss-120b
+MAHTHILDIS_MODELS=gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-120b
 MAHTHILDIS_FALLBACK=openrouter:openrouter/free
-CHAIRMAN_MODEL=gemini:gemini-3.8-flash
+CHAIRMAN_MODEL=gemini:gemini-3.5-flash-lite
 ```
 
 Gemini is the primary model and original council chairman; Groq provides the
