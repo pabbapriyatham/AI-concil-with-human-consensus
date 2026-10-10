@@ -19,7 +19,7 @@ from app.schemas import uid
 from app.synthesis import synthesize
 from app.tracing import request_context
 
-from .schemas import configured_models
+from .schemas import configured_fallback, configured_models
 
 log = logging.getLogger("mahthildis.pipeline")
 cache = ResponseCache()
@@ -93,6 +93,16 @@ class ConsensusEngine:
 
         stage_start = time.perf_counter()
         responses = [r for r in await asyncio.gather(*(query(m) for m in selected)) if r is not None]
+        fallback = configured_fallback()
+        if errors and fallback and fallback.key not in {m.key for m in selected}:
+            # Consult the fallback once, so a shared fallback is never counted as multiple votes.
+            extra = await query(fallback)
+            if extra:
+                responses.append(extra)
+            spare = [m for m in spare if m.key != fallback.key]
+            escalation.append(
+                {"action": "provider_fallback", "model": fallback.key, "succeeded": extra is not None}
+            )
         record("providers", stage_start, successes=len(responses), failures=len(errors))
         retrieval = RetrievalService(self.store)
         evidence = {item.evidence_id: item for item in request.evidence}

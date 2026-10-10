@@ -23,16 +23,17 @@ class HTTPProvider(ModelProvider):
             "anthropic": "ANTHROPIC_API_KEY",
             "gemini": "GEMINI_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
+            "groq": "GROQ_API_KEY",
         }
         key = os.getenv(keys[self.name])
         if not key:
             raise ProviderError(f"{self.name}: missing credential")
-        if self.name in {"openai", "openrouter"}:
-            url = (
-                "https://api.openai.com/v1/chat/completions"
-                if self.name == "openai"
-                else "https://openrouter.ai/api/v1/chat/completions"
-            )
+        if self.name in {"openai", "openrouter", "groq"}:
+            url = {
+                "openai": "https://api.openai.com/v1/chat/completions",
+                "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+                "groq": "https://api.groq.com/openai/v1/chat/completions",
+            }[self.name]
             return url, {"Authorization": f"Bearer {key}"}, {"model": model, "messages": messages}
         if self.name == "anthropic":
             system = "\n".join(m["content"] for m in messages if m["role"] == "system")
@@ -65,7 +66,7 @@ class HTTPProvider(ModelProvider):
         )
 
     def parse(self, data, model, latency):
-        if self.name in {"openai", "openrouter"}:
+        if self.name in {"openai", "openrouter", "groq"}:
             text = data["choices"][0]["message"].get("content")
             usage = data.get("usage", {})
             inp, out = usage.get("prompt_tokens"), usage.get("completion_tokens")
@@ -110,7 +111,7 @@ class HTTPProvider(ModelProvider):
         url, headers, payload = self.request(model, messages)
         if self.name == "openai":
             payload["max_completion_tokens"] = 2048
-        elif self.name == "openrouter":
+        elif self.name in {"openrouter", "groq"}:
             payload["max_tokens"] = 2048
         elif self.name == "gemini":
             payload["generationConfig"] = {"maxOutputTokens": 2048}

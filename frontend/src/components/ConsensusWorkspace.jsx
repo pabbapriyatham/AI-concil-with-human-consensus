@@ -146,6 +146,7 @@ export default function ConsensusWorkspace() {
       <fieldset className="model-selection"><legend>Configured models</legend>{config?.models.map(model => <label key={`${model.provider}:${model.model}`}>
         <input type="checkbox" checked={models.some(m => m.provider === model.provider && m.model === model.model)} onChange={() => toggleModel(model)} />{model.provider} · {model.model}
       </label>)}</fieldset>
+      {config?.fallback && <p className="small-note">Automatic fallback on provider failure: {config.fallback.provider} · {config.fallback.model}</p>}
       {config?.development_mode && <p className="small-note">Development fixtures cover the Eiffel Tower example. Other questions abstain. Scores are uncalibrated.</p>}
     </form>
     {error && <div className="error-banner" role="alert">{error}</div>}

@@ -32,6 +32,24 @@ def test_mock_and_cache():
             "yes",
         ),
         (
+            "groq",
+            {
+                "id": "groq-response",
+                "choices": [{"message": {"content": "yes"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+            },
+            "yes",
+        ),
+        (
+            "openrouter",
+            {
+                "id": "router-response",
+                "choices": [{"message": {"content": "yes"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+            },
+            "yes",
+        ),
+        (
             "anthropic",
             {
                 "id": "2",
@@ -52,7 +70,7 @@ def test_mock_and_cache():
     ],
 )
 def test_adapters(monkeypatch, name, data, text):
-    for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]:
+    for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"]:
         monkeypatch.setenv(key, "secret")
     requests = []
 
@@ -64,6 +82,9 @@ def test_adapters(monkeypatch, name, data, text):
     result = asyncio.run(provider.generate("fixture-model", [{"role": "user", "content": "Q"}]))
     assert result.text == text and result.input_tokens == 2 and result.cost is None
     assert requests and result.metadata["raw_payload"] == data
+    if name == "groq":
+        assert str(requests[0].url) == "https://api.groq.com/openai/v1/chat/completions"
+        assert requests[0].headers["authorization"] == "Bearer secret"
 
 
 def test_failure_sanitized(monkeypatch):

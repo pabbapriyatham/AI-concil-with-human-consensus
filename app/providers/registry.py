@@ -8,6 +8,6 @@ from .mock import MockProvider
 def get_provider(name: str):
     if os.getenv("DEV_MODE", "false").lower() == "true" or name == "mock":
         return MockProvider()
-    if name not in {"openai", "gemini", "anthropic", "openrouter"}:
+    if name not in {"openai", "gemini", "anthropic", "openrouter", "groq"}:
         raise ProviderError("Unsupported provider")
     return HTTPProvider(name)

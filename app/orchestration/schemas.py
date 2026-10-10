@@ -8,7 +8,7 @@ from app.schemas import StrictModel
 
 
 class ModelSpec(StrictModel):
-    provider: Literal["openai", "gemini", "anthropic", "openrouter", "mock"]
+    provider: Literal["openai", "gemini", "anthropic", "openrouter", "groq", "mock"]
     model: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9._:/-]+$")
 
     @property
@@ -18,11 +18,19 @@ class ModelSpec(StrictModel):
 
 def configured_models():
     value = os.getenv(
-        "MAHTHILDIS_MODELS", "openai:gpt-5.1,gemini:gemini-3-pro-preview,anthropic:claude-sonnet-4-5"
+        "MAHTHILDIS_MODELS", "gemini:gemini-3.8-flash,groq:openai/gpt-oss-120b"
     )
     return [
         ModelSpec(provider=entry.split(":", 1)[0], model=entry.split(":", 1)[1]) for entry in value.split(",")
     ]
+
+
+def configured_fallback():
+    value = os.getenv("MAHTHILDIS_FALLBACK", "").strip()
+    if not value:
+        return None
+    provider, model = value.split(":", 1)
+    return ModelSpec(provider=provider, model=model)
 
 
 class ConsensusRequest(StrictModel):

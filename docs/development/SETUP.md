@@ -22,6 +22,36 @@ For live providers, populate backend-only keys, choose current model IDs in
 MAHTHILDIS_MODELS, set DEV_MODE=false, and start with scripts/start.ps1 -Live.
 Provider IDs are configuration examples, not verified account availability.
 
+## Gemini + Groq + OpenRouter
+
+Put your keys in the root `.env` file (backend only):
+
+```dotenv
+GEMINI_API_KEY=your-google-ai-studio-key
+GROQ_API_KEY=your-groqcloud-key
+OPENROUTER_API_KEY=your-openrouter-key
+DEV_MODE=false
+MAHTHILDIS_MODELS=gemini:gemini-3.8-flash,groq:openai/gpt-oss-120b
+MAHTHILDIS_FALLBACK=openrouter:openrouter/free
+CHAIRMAN_MODEL=gemini:gemini-3.8-flash
+```
+
+Gemini is the primary model and original council chairman; Groq provides the
+second answer. OpenRouter is consulted once on provider failure, including exhausted
+rate-limit retries. Its answer retains OpenRouter provenance and is counted once.
+Both the consensus workspace and original council support this configuration.
+The original council also uses the configured chairman for conversation titles.
+Restart the backend after editing keys or model IDs: `scripts/start.ps1 -Live`.
+The start script honors `.env` by default; `-Live` explicitly disables mock mode.
+
+Model IDs were checked against the official model catalogs on 10 October 2026:
+[Gemini](https://ai.google.dev/gemini-api/docs/models),
+[Groq](https://console.groq.com/docs/models), and
+[OpenRouter free router](https://openrouter.ai/docs/guides/routing/routers/free-router).
+Account access and free-tier quotas still need verification with your keys.
+No live provider requests were made during configuration. This change adds text
+generation; news retrieval, image inputs and voice interfaces are separate features.
+
 PostgreSQL/Qdrant:
 
 ```powershell

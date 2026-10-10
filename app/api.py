@@ -6,7 +6,7 @@ from pydantic import Field, HttpUrl
 
 from app.knowledge.store import StaleVersion, Store
 from app.orchestration import ConsensusEngine, ConsensusRequest
-from app.orchestration.schemas import configured_models
+from app.orchestration.schemas import configured_fallback, configured_models
 from app.retrieval import RetrievalService
 from app.schemas import StrictModel
 from app.validation import ReviewRequest, ReviewService
@@ -22,8 +22,10 @@ def get_store():
 
 @router.get("/config")
 def configuration():
+    fallback = configured_fallback()
     return {
         "models": [m.model_dump() for m in configured_models()],
+        "fallback": fallback.model_dump() if fallback else None,
         "development_mode": os.getenv("DEV_MODE", "false").lower() == "true",
         "embedding_backend": os.getenv("EMBEDDING_BACKEND", "hash"),
         "nli_backend": os.getenv("NLI_BACKEND", "structured"),
