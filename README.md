@@ -79,3 +79,4 @@ Native provider stream methods currently expose a buffered fallback.
 Upstream: https://github.com/karpathy/llm-council. Original README is retained in
 [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md). This is decision support, not an
 autonomous authority; professional/high-risk questions require appropriate human review.
+# AI-concil-with-human-consensus
