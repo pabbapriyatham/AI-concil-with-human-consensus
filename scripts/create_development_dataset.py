@@ -60,6 +60,7 @@ for category in categories:
                 "question": f"According to the supplied registry, what can be established about {subject}?",
                 "ground_truth": None if ambiguous else good,
                 "expected_claims": [] if ambiguous else [good],
+                "fixture_contradiction_expected": good != bad,
                 "evidence": evidence,
                 "difficulty": "hard" if ambiguous else "easy",
                 "category": category,
@@ -69,5 +70,5 @@ for category in categories:
         )
 target = Path("datasets/development.jsonl")
 target.parent.mkdir(parents=True, exist_ok=True)
-target.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf8")
+target.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf8", newline="\n")
 print(f"Wrote {len(rows)} synthetic examples to {target}")

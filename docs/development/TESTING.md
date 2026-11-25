@@ -22,8 +22,8 @@ Edge is the default channel; BROWSER_CHANNEL may change it. Use an isolated
 DATABASE_URL for browser tests: the walkthrough creates explicitly labeled test reviews.
 Screenshots are stored in artifacts/. The legacy council SSE path is exercised.
 
-PostgreSQL: set TEST_DATABASE_URL for migration/store checks against an isolated
-test database. Qdrant REST currently has mocked contract coverage; use a dedicated
-collection and actual service for deployment validation. Downloaded ML model behavior
-and live provider availability require separate tests; mock success is not sufficient.
-Full infrastructure deployment was not performed here.
+Set `TEST_DATABASE_URL` for migration and store checks against an isolated
+PostgreSQL database. Set `TEST_QDRANT_URL` for the Qdrant retrieval test. It
+creates uniquely named collections and removes them after the test. Qdrant REST
+contract tests also run with mocked HTTP. Downloaded ML model behavior and
+live provider availability require separate tests.

@@ -22,6 +22,14 @@ RelationType = Literal[
     "UNSUPPORTED",
 ]
 
+OPPOSITE_STATES = (
+    frozenset({"on", "off"}),
+    frozenset({"enabled", "disabled"}),
+    frozenset({"open", "closed"}),
+    frozenset({"locked", "unlocked"}),
+)
+STATE_CLAIM = re.compile(r"(.+? (?:is|was|are|were)) ([a-z]+)\.?")
+
 
 class Relation(StrictModel):
     relation_id: str = Field(default_factory=uid)
@@ -40,6 +48,10 @@ def structured(a, b):
         return "AGREEMENT", 1.0
     if re.sub(r"\b(?:not|never)\s*", "", a) == re.sub(r"\b(?:not|never)\s*", "", b):
         return "CONTRADICTION", 0.9
+    state_a, state_b = STATE_CLAIM.fullmatch(a), STATE_CLAIM.fullmatch(b)
+    if state_a and state_b and state_a[1] == state_b[1]:
+        if frozenset({state_a[2], state_b[2]}) in OPPOSITE_STATES:
+            return "CONTRADICTION", 0.9
     nums_a, nums_b = re.findall(r"\b\d+(?:\.\d+)?\b", a), re.findall(r"\b\d+(?:\.\d+)?\b", b)
     if nums_a and nums_b and nums_a != nums_b:
         skeleton_a = re.sub(r"\b\d+(?:\.\d+)?\b", "<value>", a)

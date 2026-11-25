@@ -21,12 +21,16 @@ Execution body: question, optional context/models/evidence/domain/category, mode
 CHEAP/BALANCED/HIGH_ACCURACY, aggregation majority/weighted/evidence/knowledge,
 allow_escalation and timeout. CHEAP starts two models; other modes start three.
 Escalation can broaden evidence once and consult at most one spare configured model.
+Execution context and attached evidence are saved in the execution record and
+excluded from future document retrieval. Use POST /api/consensus/documents to add
+material to the shared corpus explicitly.
 At most eight model selections, 30 evidence inputs and 120 analyzed claims; raw
 responses remain preserved. Unknown token/cost fields stay explicitly incomplete.
 Evidence of type knowledge cannot be injected externally; it comes from reviewed SQL.
 
 Review body: action, expected_version, reviewer, explanation, optional corrected_claim
-and evidence. Correction requires text; adding evidence requires evidence. Missing
+and evidence. Correction requires text. Adding evidence requires evidence. The
+`RETIRE` action marks a claim superseded and preserves its review history. Missing
 knowledge returns 404; stale versions 409; input failures 422.
 
 Set API_TOKEN to require Authorization: Bearer TOKEN on /api routes. The frontend

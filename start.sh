@@ -2,6 +2,12 @@
 
 # LLM Council - Start script
 
+case "${1:-}" in
+    "") export DEV_MODE=true ;;
+    --live) export DEV_MODE=false ;;
+    *) echo "Usage: $0 [--live]" >&2; exit 2 ;;
+esac
+
 echo "Starting LLM Council..."
 echo ""
 

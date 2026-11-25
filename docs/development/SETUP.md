@@ -42,7 +42,8 @@ rate-limit retries. Its answer retains OpenRouter provenance and is counted once
 Both the consensus workspace and original council support this configuration.
 The original council also uses the configured chairman for conversation titles.
 Restart the backend after editing keys or model IDs: `scripts/start.ps1 -Live`.
-The start script honors `.env` by default; `-Live` explicitly disables mock mode.
+The Windows and Bash launchers explicitly enable mock mode by default. Use
+`-Live` on Windows or `--live` on Bash to enable real provider calls.
 
 Model IDs were checked against the official model catalogs on 10 October 2026:
 [Gemini](https://ai.google.dev/gemini-api/docs/models),

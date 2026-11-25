@@ -25,3 +25,10 @@ def test_nli_named_labels():
         lambda *a, **k: [{"label": "contradiction", "score": 0.91}, {"label": "neutral", "score": 0.09}]
     )
     assert nli.predict("a", "b") == ("CONTRADICTION", 0.91)
+
+
+def test_opposite_states_require_same_subject_and_tense():
+    engine = RelationEngine(Embeddings("hash"))
+    assert engine.compare_text("The lamp is on.", "The lamp is off.")[0] == "CONTRADICTION"
+    assert engine.compare_text("The lamp was on.", "The lamp is off.")[0] != "CONTRADICTION"
+    assert engine.compare_text("The desk lamp is on.", "The hall lamp is off.")[0] != "CONTRADICTION"

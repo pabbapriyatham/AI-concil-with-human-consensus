@@ -1,7 +1,7 @@
 import os
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 
 from app.evidence.schemas import Evidence
 from app.schemas import StrictModel
@@ -16,21 +16,29 @@ class ModelSpec(StrictModel):
         return f"{self.provider}:{self.model}"
 
 
+def configured_model(value, variable):
+    provider, _, model = value.strip().partition(":")
+    try:
+        return ModelSpec(provider=provider, model=model)
+    except ValidationError:
+        raise ValueError(f"{variable} requires a valid provider:model identifier") from None
+
+
 def configured_models():
     value = os.getenv(
         "MAHTHILDIS_MODELS", "gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-120b"
     )
-    return [
-        ModelSpec(provider=entry.split(":", 1)[0], model=entry.split(":", 1)[1]) for entry in value.split(",")
-    ]
+    models = [configured_model(entry, "MAHTHILDIS_MODELS") for entry in value.split(",")]
+    if len(models) > 8 or len({model.key for model in models}) != len(models):
+        raise ValueError("MAHTHILDIS_MODELS requires at most eight distinct models")
+    return models
 
 
 def configured_fallback():
     value = os.getenv("MAHTHILDIS_FALLBACK", "").strip()
     if not value:
         return None
-    provider, model = value.split(":", 1)
-    return ModelSpec(provider=provider, model=model)
+    return configured_model(value, "MAHTHILDIS_FALLBACK")
 
 
 class ConsensusRequest(StrictModel):

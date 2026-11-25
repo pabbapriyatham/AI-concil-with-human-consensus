@@ -73,7 +73,9 @@ class Store:
             )
             return conn.execute(stmt.where(db.knowledge_items.c.id == knowledge_id)).scalar_one_or_none()
 
-    def append_version(self, knowledge_id, expected_version, changes, validator, reason, audit=None):
+    def append_version(
+        self, knowledge_id, expected_version, changes, validator, reason, audit=None, evidence=()
+    ):
         old = self.current(knowledge_id)
         if old is None:
             raise KeyError(knowledge_id)
@@ -118,6 +120,8 @@ class Store:
                 conn.execute(
                     insert(db.validations).values(id=uid(), knowledge_id=knowledge_id, payload=audit)
                 )
+            for item in evidence:
+                self._add_evidence(conn, item)
         return payload
 
     def list_knowledge(self, status=None):
@@ -132,12 +136,19 @@ class Store:
             return list(conn.execute(stmt).scalars())
 
     def add_evidence(self, item):
-        payload = item.model_dump(mode="json")
         with self.engine.begin() as conn:
-            if not conn.execute(select(db.evidence.c.id).where(db.evidence.c.id == item.evidence_id)).first():
-                conn.execute(
-                    insert(db.evidence).values(id=item.evidence_id, source=item.source, payload=payload)
-                )
+            self._add_evidence(conn, item)
+
+    def _add_evidence(self, conn, item):
+        if self.engine.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as evidence_insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as evidence_insert
+        conn.execute(
+            evidence_insert(db.evidence)
+            .values(id=item.evidence_id, source=item.source, payload=item.model_dump(mode="json"))
+            .on_conflict_do_nothing(index_elements=["id"])
+        )
 
     def list_evidence(self):
         with self.engine.connect() as conn:

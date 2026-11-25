@@ -12,7 +12,8 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # Council members - list of OpenRouter model identifiers
 COUNCIL_MODELS = os.getenv(
     "MAHTHILDIS_MODELS", "gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-120b"
-).split(",")
+)
+COUNCIL_MODELS = [entry.strip() for entry in COUNCIL_MODELS.split(",")]
 
 # Chairman model - synthesizes final response
 CHAIRMAN_MODEL = os.getenv("CHAIRMAN_MODEL", COUNCIL_MODELS[0])

@@ -14,6 +14,7 @@ from app.normalization import normalize_response
 from app.providers import ProviderError, get_provider
 from app.providers.base import ProviderResult
 from app.providers.cache import ResponseCache
+from app.providers.pricing import configured_prices
 from app.retrieval import RetrievalService
 from app.schemas import uid
 from app.synthesis import synthesize
@@ -26,10 +27,20 @@ cache = ResponseCache()
 
 
 class ConsensusEngine:
-    def __init__(self, store, provider_factory=get_provider, reliability=None, confidence_enabled=True):
+    def __init__(
+        self,
+        store,
+        provider_factory=get_provider,
+        reliability=None,
+        confidence_enabled=True,
+        use_cache=True,
+        retrieval=None,
+    ):
         self.store, self.provider_factory = store, provider_factory
         self.reliability = reliability or store.reliability_profiles()
         self.confidence_enabled = confidence_enabled
+        self.use_cache = use_cache
+        self.retrieval = retrieval
 
     async def run(self, request):
         started = time.perf_counter()
@@ -37,7 +48,7 @@ class ConsensusEngine:
         all_models = request.models or configured_models()
         count = min(len(all_models), 2 if request.mode == "CHEAP" else 3)
         # If known prices exist, CHEAP orders models by configured output rates.
-        prices = json.loads(os.getenv("MODEL_PRICES_JSON", "{}"))
+        prices = configured_prices()
         if request.mode == "CHEAP" and all(m.key in prices for m in all_models):
             all_models = sorted(all_models, key=lambda m: prices[m.key]["output"])
         selected, spare = all_models[:count], all_models[count:]
@@ -68,12 +79,13 @@ class ConsensusEngine:
             consulted.append(spec.model_dump())
             key = cache.key(spec.provider, spec.model, prompt, "answer-v1", os.getenv("DEV_MODE"))
             try:
-                result = cache.get(key)
+                result = cache.get(key) if self.use_cache else None
                 if result is None:
                     result = await self.provider_factory(spec.provider).generate(
                         spec.model, prompt, timeout=request.timeout, request_id=request_id
                     )
-                    cache.put(key, result)
+                    if self.use_cache:
+                        cache.put(key, result)
                 record(
                     "model_response",
                     time.perf_counter() - result.latency,
@@ -104,12 +116,10 @@ class ConsensusEngine:
                 {"action": "provider_fallback", "model": fallback.key, "succeeded": extra is not None}
             )
         record("providers", stage_start, successes=len(responses), failures=len(errors))
-        retrieval = RetrievalService(self.store)
+        retrieval = self.retrieval or RetrievalService(self.store)
         evidence = {item.evidence_id: item for item in request.evidence}
-        for item in request.evidence:
-            self.store.add_evidence(item)
         if request.context.strip():
-            for item in retrieval.ingest(request.context, f"request context {question_id}"):
+            for item in retrieval.ingest(request.context, f"request context {question_id}", persist=False):
                 evidence[item.evidence_id] = item
         relations_engine = RelationEngine()
         evidence_engine = EvidenceEngine(relations_engine)
@@ -127,10 +137,10 @@ class ConsensusEngine:
                 )
             queries = [request.question] + list(dict.fromkeys(c.claim_text for c in claims))[:12]
             if request.aggregation in {"evidence", "knowledge"}:
-                for query_text in queries:
-                    for item in retrieval.retrieve(query_text, limit=retrieval_limit):
+                for matches in retrieval.retrieve_many(queries, limit=retrieval_limit):
+                    for item in matches:
                         if request.aggregation == "knowledge" or item.source_type != "knowledge":
-                            evidence[item.evidence_id] = item
+                            evidence.setdefault(item.evidence_id, item)
             # Validated corrections become explicit evidence-derived candidate responses,
             # distinguishable from model responses; no fictional model attribution.
             candidates = list(claims)
@@ -246,7 +256,9 @@ class ConsensusEngine:
         if not responses:
             review_reasons.append("No model responses available")
         stage_start = time.perf_counter()
-        synthesis = synthesize(claims, decisions, confidence, list(evidence.values()), edges, review_reasons)
+        synthesis = synthesize(
+            claims, decisions, confidence, list(evidence.values()), edges, review_reasons, assessments
+        )
         review_items = {}
         if review_reasons:
             for claim in claims:

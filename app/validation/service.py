@@ -7,7 +7,9 @@ from app.schemas import StrictModel, now
 
 
 class ReviewRequest(StrictModel):
-    action: Literal["ACCEPT", "CORRECT", "REJECT", "MARK_UNCERTAIN", "ADD_EVIDENCE", "ADD_EXPLANATION"]
+    action: Literal[
+        "ACCEPT", "CORRECT", "REJECT", "MARK_UNCERTAIN", "RETIRE", "ADD_EVIDENCE", "ADD_EXPLANATION"
+    ]
     expected_version: int = Field(ge=1)
     reviewer: str = Field(min_length=1, max_length=200)
     explanation: str = Field(min_length=1, max_length=10000)
@@ -40,6 +42,8 @@ class ReviewService:
             changes.update(status="REJECTED", validation_state="human-rejected", confidence=0)
         elif request.action == "MARK_UNCERTAIN":
             changes.update(status="DISPUTED", validation_state="human-uncertain", confidence=0.25)
+        elif request.action == "RETIRE":
+            changes.update(status="SUPERSEDED", validation_state="human-retired", confidence=0)
         if request.action == "CORRECT":
             changes["claim"] = request.corrected_claim
         if request.evidence:
@@ -54,10 +58,12 @@ class ReviewService:
             "corrected_claim": request.corrected_claim,
             "evidence": [e.model_dump(mode="json") for e in request.evidence],
         }
-        # Version update + validation audit share one transaction.
-        result = self.store.append_version(
-            knowledge_id, request.expected_version, changes, request.reviewer, request.explanation, audit
+        return self.store.append_version(
+            knowledge_id,
+            request.expected_version,
+            changes,
+            request.reviewer,
+            request.explanation,
+            audit,
+            evidence=request.evidence,
         )
-        for item in request.evidence:
-            self.store.add_evidence(item)
-        return result

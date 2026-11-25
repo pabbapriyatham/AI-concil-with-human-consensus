@@ -70,7 +70,7 @@ class QdrantVectors(VectorStore):
         self.ensure(collection)
         response = self.client.post(
             f"collections/{collection}/points/query",
-            json={"query": list(vector), "limit": limit, "with_payload": True},
+            json={"query": [float(value) for value in vector], "limit": limit, "with_payload": True},
         )
         response.raise_for_status()
         return response.json()["result"]["points"]

@@ -35,7 +35,7 @@ function ReviewCard({ item, onReviewed }) {
     <p>{item.claim}</p>
     <form onSubmit={submit}>
       <label>Action<select value={action} onChange={e => setAction(e.target.value)}>
-        {['ACCEPT', 'CORRECT', 'REJECT', 'MARK_UNCERTAIN', 'ADD_EVIDENCE', 'ADD_EXPLANATION'].map(value => <option key={value}>{value}</option>)}
+        {['ACCEPT', 'CORRECT', 'REJECT', 'MARK_UNCERTAIN', 'RETIRE', 'ADD_EVIDENCE', 'ADD_EXPLANATION'].map(value => <option key={value}>{value}</option>)}
       </select></label>
       {action === 'CORRECT' && <label>Corrected claim<textarea required value={correction} onChange={e => setCorrection(e.target.value)} /></label>}
       <div className="form-grid">

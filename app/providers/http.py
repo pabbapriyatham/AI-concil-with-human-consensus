@@ -9,6 +9,7 @@ import time
 import httpx
 
 from .base import ModelProvider, ProviderError, ProviderResult
+from .pricing import configured_prices
 
 log = logging.getLogger("mahthildis.providers")
 
@@ -85,7 +86,7 @@ class HTTPProvider(ModelProvider):
         if not isinstance(text, str) or not text.strip():
             raise ProviderError(f"{self.name}: empty or blocked response")
         # Prices are configured, never guessed. Rates are USD per million tokens.
-        rates = json.loads(os.getenv("MODEL_PRICES_JSON", "{}")).get(f"{self.name}:{model}")
+        rates = configured_prices().get(f"{self.name}:{model}")
         cost = (
             (inp * rates["input"] + out * rates["output"]) / 1e6
             if rates and inp is not None and out is not None
@@ -152,7 +153,7 @@ class HTTPProvider(ModelProvider):
                             await asyncio.sleep(min(2**attempt, 5))
         except ProviderError:
             raise
-        except (httpx.HTTPError, TimeoutError, KeyError, IndexError, ValueError, TypeError) as exc:
+        except (httpx.HTTPError, TimeoutError, AttributeError, KeyError, IndexError, ValueError, TypeError) as exc:
             # Exception strings can contain URLs/headers/credentials; expose only the class.
             raise ProviderError(f"{self.name}: {type(exc).__name__}") from None
         raise ProviderError(f"{self.name}: retry budget exhausted")

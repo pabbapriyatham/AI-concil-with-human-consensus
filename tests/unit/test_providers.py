@@ -7,6 +7,7 @@ from app.providers.base import ProviderError
 from app.providers.cache import ResponseCache
 from app.providers.http import HTTPProvider
 from app.providers.mock import MockProvider
+from app.providers.pricing import configured_prices
 
 
 def test_mock_and_cache():
@@ -107,3 +108,16 @@ def test_retry(monkeypatch):
 
     result = asyncio.run(HTTPProvider("openai", httpx.MockTransport(handler)).generate("m", []))
     assert result.metadata["retries"] == 1
+
+
+@pytest.mark.parametrize("value", ["[]", '{"model": {"input": 1}}', '{"model": {"input": -1, "output": 1}}'])
+def test_invalid_prices_do_not_expose_environment_values(monkeypatch, value):
+    monkeypatch.setenv("MODEL_PRICES_JSON", value)
+    with pytest.raises(ValueError, match="^MODEL_PRICES_JSON must map") as exc:
+        configured_prices()
+    assert value not in str(exc.value)
+
+
+def test_blank_prices_are_valid(monkeypatch):
+    monkeypatch.setenv("MODEL_PRICES_JSON", "  ")
+    assert configured_prices() == {}

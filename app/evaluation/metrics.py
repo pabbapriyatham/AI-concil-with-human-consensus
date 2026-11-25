@@ -33,12 +33,15 @@ def summarize(rows):
         "coverage": len(supported) / len(rows),
         "latency_mean": sum(r["latency"] for r in rows) / len(rows),
         "latency_p95": sorted(r["latency"] for r in rows)[min(len(rows) - 1, int(len(rows) * 0.95))],
-        "tokens": sum(r["tokens"] for r in rows),
+        "tokens": sum(r["tokens"] for r in rows) if all(r["tokens"] is not None for r in rows) else None,
+        "system_errors": sum(r["system_error"] for r in rows),
         "cost": sum(r["cost"] or 0 for r in rows) if all(r["cost"] is not None for r in rows) else None,
         "consistency": sum(measured_consistency) / len(measured_consistency)
         if measured_consistency
         else None,
-        "consistency_tokens": sum(r.get("consistency_tokens", 0) for r in rows),
+        "consistency_tokens": sum(r["consistency_tokens"] for r in rows)
+        if all(r["consistency_tokens"] is not None for r in rows)
+        else None,
         "consistency_cost": sum(r.get("consistency_cost", 0) for r in rows)
         if all(r.get("consistency_cost", 0) is not None for r in rows)
         else None,
@@ -58,16 +61,28 @@ def summarize(rows):
             sum(r["claim_fn"] for r in rows),
         )
     )
-    detection = classification_metrics(
-        sum(r["contradiction_tp"] for r in rows),
-        sum(r["contradiction_fp"] for r in rows),
-        sum(r["contradiction_fn"] for r in rows),
+    labeled = [r for r in rows if r["contradiction_labeled"]]
+    metrics["contradiction_samples"] = len(labeled)
+    detection = (
+        classification_metrics(
+            sum(r["contradiction_tp"] for r in labeled),
+            sum(r["contradiction_fp"] for r in labeled),
+            sum(r["contradiction_fn"] for r in labeled),
+        )
+        if labeled
+        else dict.fromkeys(("precision", "recall", "f1"))
     )
     metrics.update({f"contradiction_{k}": value for k, value in detection.items()})
-    error_detection = classification_metrics(
-        sum(r["error_detect_tp"] for r in rows),
-        sum(r["error_detect_fp"] for r in rows),
-        sum(r["error_detect_fn"] for r in rows),
+    error_labeled = [r for r in rows if r["error_detection_labeled"]]
+    metrics["error_detection_samples"] = len(error_labeled)
+    error_detection = (
+        classification_metrics(
+            sum(r["error_detect_tp"] for r in error_labeled),
+            sum(r["error_detect_fp"] for r in error_labeled),
+            sum(r["error_detect_fn"] for r in error_labeled),
+        )
+        if error_labeled
+        else dict.fromkeys(("precision", "recall", "f1"))
     )
     metrics.update({f"error_detection_{k}": value for k, value in error_detection.items()})
     return metrics

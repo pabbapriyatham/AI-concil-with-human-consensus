@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
 from uuid import UUID
@@ -16,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.api import router as consensus_router
+from app.orchestration.schemas import configured_fallback, configured_models
+from app.providers.pricing import configured_prices
 from app.security import request_middleware
 
 from . import storage
@@ -30,7 +33,15 @@ from .council import (
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(message)s")
 
-app = FastAPI(title="Mahthildis Multi-Model Consensus Engine")
+@asynccontextmanager
+async def lifespan(app):
+    configured_models()
+    configured_fallback()
+    configured_prices()
+    yield
+
+
+app = FastAPI(title="Mahthildis Multi-Model Consensus Engine", lifespan=lifespan)
 
 app.include_router(consensus_router)
 app.middleware("http")(request_middleware)

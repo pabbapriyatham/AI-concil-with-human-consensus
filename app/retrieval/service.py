@@ -1,10 +1,15 @@
 import hashlib
 import os
+import re
 
 from app.comparison.semantic import get_embeddings
 from app.evidence.schemas import Evidence
 
 from .vectors import MemoryVectors, QdrantVectors
+
+LEGACY_CONTEXT_SOURCE = re.compile(
+    r"request context [0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"
+)
 
 
 def chunk_text(text, words=180, overlap=30):
@@ -28,7 +33,7 @@ class RetrievalService:
             kind: f"mahthildis_{kind}_{suffix}" for kind in ["evidence", "knowledge", "claims"]
         }
 
-    def ingest(self, text, source, source_type="document", quality=0.5, url=None):
+    def ingest(self, text, source, source_type="document", quality=0.5, url=None, *, persist=True):
         items = []
         for index, chunk in enumerate(chunk_text(text)):
             item = Evidence(
@@ -39,12 +44,22 @@ class RetrievalService:
                 url=url,
                 provenance={"chunk_index": index, "ingestion": "text-chunk-v1"},
             )
-            self.store.add_evidence(item)
+            if persist:
+                self.store.add_evidence(item)
             items.append(item)
         return items
 
     def retrieve(self, query, limit=5, minimum=0.2):
-        documents = [Evidence.model_validate(p) for p in self.store.list_evidence()]
+        return self.retrieve_many([query], limit, minimum)[0]
+
+    def retrieve_many(self, queries, limit=5, minimum=0.2):
+        if not queries:
+            return []
+        documents = [
+            Evidence.model_validate(payload)
+            for payload in self.store.list_evidence()
+            if not LEGACY_CONTEXT_SOURCE.fullmatch(payload["source"])
+        ]
         knowledge = self.store.list_knowledge("VALIDATED")
         memory = [
             Evidence(
@@ -65,9 +80,11 @@ class RetrievalService:
             for k in knowledge
         ]
         items = {"evidence": documents, "knowledge": memory}
-        query_vector = self.embeddings.encode([query])[0]
-        result = []
+        query_vectors = self.embeddings.encode(queries)
+        results = [[] for _ in queries]
         for kind, group in items.items():
+            if not group:
+                continue
             vectors = self.embeddings.encode([e.text for e in group])
             self.vectors.upsert(
                 self.collections[kind],
@@ -85,11 +102,14 @@ class RetrievalService:
             )
             current = {e.evidence_id: e for e in group}
             # Overfetch stale IDs; only current SQL-backed validated items are accepted.
-            for hit in self.vectors.search(self.collections[kind], query_vector, limit * 3):
-                item = current.get(str(hit["id"]))
-                if item is None or hit["score"] < minimum:
-                    continue
-                if kind == "knowledge" and hit["payload"].get("version") != item.provenance["version"]:
-                    continue
-                result.append(item.model_copy(update={"relevance_score": min(1, max(0, hit["score"]))}))
-        return sorted(result, key=lambda e: e.relevance_score, reverse=True)[: limit * 2]
+            for query_vector, result in zip(query_vectors, results):
+                for hit in self.vectors.search(self.collections[kind], query_vector, limit * 3):
+                    item = current.get(str(hit["id"]))
+                    if item is None or hit["score"] < minimum:
+                        continue
+                    if kind == "knowledge" and hit["payload"].get("version") != item.provenance["version"]:
+                        continue
+                    result.append(item.model_copy(update={"relevance_score": min(1, max(0, hit["score"]))}))
+        return [
+            sorted(result, key=lambda e: e.relevance_score, reverse=True)[: limit * 2] for result in results
+        ]

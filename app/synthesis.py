@@ -1,7 +1,9 @@
 """Deterministic synthesis from retrieved structured facts; no invented citations."""
 
+from collections import defaultdict
 
-def synthesize(claims, decisions, confidence, evidence, relations, review_reasons):
+
+def synthesize(claims, decisions, confidence, evidence, relations, review_reasons, assessments=()):
     by_id = {c.claim_id: c for c in claims}
     claim_confidence = {c["claim_id"]: c["raw_confidence"] for c in confidence["claims"]}
     supported, seen = [], set()
@@ -30,14 +32,30 @@ def synthesize(claims, decisions, confidence, evidence, relations, review_reason
         for edge in contradictions[:10]:
             a, b = by_id[edge.source_claim], by_id[edge.target_claim]
             lines.append(f"- {a.model}: {a.claim_text} / {b.model}: {b.claim_text}")
-    cited = {eid for _, d in supported for eid in d.evidence_ids}
-    sources = [e for e in evidence if e.evidence_id in cited]
-    if sources:
-        lines.extend(["", "## Evidence actually retrieved"])
-        for item in sources:
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    assessments_by_claim = defaultdict(list)
+    for assessment in assessments:
+        if assessment.verdict != "INSUFFICIENT":
+            assessments_by_claim[assessment.claim_id].append(assessment)
+    cited = set()
+    for claim, decision in supported:
+        assessments_for_claim = [
+            assessment
+            for assessment in assessments_by_claim[claim.claim_id]
+            if assessment.evidence_id in decision.evidence_ids
+        ]
+        if not assessments_for_claim:
+            continue
+        if not cited:
+            lines.extend(["", "## Evidence by claim"])
+        lines.extend(["", claim.claim_text])
+        for assessment in assessments_for_claim:
+            item = evidence_by_id[assessment.evidence_id]
+            cited.add(item.evidence_id)
             label = item.source.replace("[", "(").replace("]", ")")
-            lines.append(f"- [{label}]({item.url})" if item.url else f"- {label}")
-    used_memory = [e for e in sources if e.source_type == "knowledge"]
+            source = f"[{label}]({item.url})" if item.url else label
+            lines.append(f"- {assessment.verdict.title()} · {source} — {assessment.matched_text}")
+    used_memory = [item for item in evidence if item.evidence_id in cited and item.source_type == "knowledge"]
     if used_memory:
         lines.extend(
             [

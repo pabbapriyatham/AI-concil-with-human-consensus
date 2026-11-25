@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from uuid import uuid4
 
 from app.orchestration.schemas import configured_fallback
@@ -12,7 +14,17 @@ from app.providers.cache import ResponseCache
 from app.tracing import request_context
 
 _cache = ResponseCache()
+_cache_enabled = ContextVar("council_response_cache_enabled", default=True)
 log = logging.getLogger("mahthildis.legacy")
+
+
+@contextmanager
+def uncached_council():
+    token = _cache_enabled.set(False)
+    try:
+        yield
+    finally:
+        _cache_enabled.reset(token)
 
 
 async def query_model(model, messages, timeout=120.0, allow_fallback=True):
@@ -22,12 +34,13 @@ async def query_model(model, messages, timeout=120.0, allow_fallback=True):
     } else ("openrouter", model)
     key = _cache.key(provider, model_id, messages, "council-v1", os.getenv("DEV_MODE"))
     try:
-        result = _cache.get(key)
+        result = _cache.get(key) if _cache_enabled.get() else None
         if result is None:
             result = await get_provider(provider).generate(
                 model_id, messages, timeout=timeout, request_id=request_id
             )
-            _cache.put(key, result)
+            if _cache_enabled.get():
+                _cache.put(key, result)
         return {
             "content": result.text,
             "reasoning_details": result.metadata.get("raw_payload", {})

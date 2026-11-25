@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -14,14 +15,18 @@ from app.knowledge import database as db
 from app.knowledge.store import Store
 from app.normalization import normalize_response
 from app.orchestration import ConsensusEngine, ConsensusRequest, ModelSpec
-from app.orchestration.engine import cache
-from app.providers import get_provider
+from app.orchestration.schemas import configured_fallback, configured_models
+from app.providers import ProviderError, get_provider
 from app.providers.base import ProviderResult
+from app.retrieval import RetrievalService
+from app.retrieval.vectors import MemoryVectors
 from app.schemas import uid
 from app.validation import ReviewRequest, ReviewService
+from backend.config import CHAIRMAN_MODEL, COUNCIL_MODELS
 from backend.council import run_full_council
+from backend.openrouter import uncached_council
 
-from .dataset import DatasetExample
+from .dataset import DatasetExample, ReviewedMemory
 from .metrics import correctness, summarize
 
 
@@ -44,78 +49,144 @@ class FixtureProvider:
         )
 
 
-async def evaluate(dataset, output, store=None, live=False, limit=None, consistency_repeats=2):
-    path = Path(dataset)
-    examples = [
-        DatasetExample.model_validate(json.loads(line))
-        for line in path.read_text(encoding="utf8").splitlines()
-        if line.strip()
-    ]
-    if limit:
-        examples = examples[:limit]
+async def baseline_trial(system, example, models, factory, live):
+    if system == "A":
+        try:
+            response = await factory(models[0].provider).generate(
+                models[0].model, [{"role": "user", "content": example.question}]
+            )
+        except ProviderError:
+            return [], True, None, None
+        tokens = (
+            response.input_tokens + response.output_tokens
+            if response.input_tokens is not None and response.output_tokens is not None
+            else None
+        )
+        cost = response.cost
+    else:
+        if live:
+            with uncached_council():
+                _, _, final, _ = await run_full_council(example.question)
+            if not final.get("provenance"):
+                return [], True, None, None
+        else:
+            async def query_model(model, messages, **kwargs):
+                return {"content": example.fixture_responses[0]}
+
+            async def query_parallel(model_ids, messages):
+                ranking = "evaluating different responses" in messages[-1]["content"]
+                return {
+                    model: {
+                        "content": "FINAL RANKING:\n1. Response A\n2. Response B\n3. Response C"
+                        if ranking
+                        else example.fixture_responses[index % 3]
+                    }
+                    for index, model in enumerate(model_ids)
+                }
+
+            with (
+                patch("backend.council.query_model", query_model),
+                patch("backend.council.query_models_parallel", query_parallel),
+            ):
+                _, _, final, _ = await run_full_council(example.question)
+        response = ProviderResult("baseline", "chairman", final["response"], uid())
+        tokens = cost = None if live else 0
+    normalized = normalize_response(response, example.id)
+    claims = [claim.claim_text for claim in extract_claims(normalized) if claim.claim_type != "uncertain"]
+    return claims, False, tokens, cost
+
+
+def load_dataset(raw):
+    examples = [DatasetExample.model_validate_json(line) for line in raw.splitlines() if line.strip()]
     if not examples:
         raise ValueError("Empty evaluation dataset")
+    if len({item.id for item in examples}) != len(examples):
+        raise ValueError("Dataset example IDs must be unique")
+    if len({question_key(item.question) for item in examples}) != len(examples):
+        raise ValueError("Dataset questions must be unique after case and whitespace normalization")
+    return examples
+
+
+def question_key(question):
+    return " ".join(question.casefold().split())
+
+
+async def evaluate(
+    dataset,
+    output,
+    store=None,
+    live=False,
+    limit=None,
+    consistency_repeats=2,
+    memory_path=None,
+    development_path=None,
+):
+    path = Path(dataset)
+    raw = path.read_bytes()
+    examples = load_dataset(raw)
+    if limit is not None:
+        if limit < 1:
+            raise ValueError("Evaluation limit must be positive")
+        examples = examples[:limit]
+    if consistency_repeats < 1:
+        raise ValueError("Consistency repetitions must be positive")
+    if not live and any(item.fixture_responses is None for item in examples):
+        raise ValueError("Offline evaluation requires fixture_responses on every selected example")
+    development_bytes = None
+    if development_path:
+        development_bytes = Path(development_path).read_bytes()
+        development = load_dataset(development_bytes)
+        if {item.id for item in examples} & {item.id for item in development} or {
+            question_key(item.question) for item in examples
+        } & {question_key(item.question) for item in development}:
+            raise ValueError("Evaluation and development datasets overlap by ID or question")
+    memory_bytes = Path(memory_path).read_bytes() if memory_path else b""
+    reviewed_memory = [
+        ReviewedMemory.model_validate_json(line)
+        for line in memory_bytes.splitlines()
+        if line.strip()
+    ]
+    if memory_path and not reviewed_memory:
+        raise ValueError("Reviewed memory file contains no entries")
+    fallback = None
+    if live:
+        models = configured_models()[:3]
+        fallback = configured_fallback()
+        if (
+            os.getenv("DEV_MODE", "").lower() == "true"
+            or any(model.provider == "mock" for model in models)
+            or (fallback and fallback.provider == "mock")
+            or any(model.startswith("mock:") for model in [*COUNCIL_MODELS, CHAIRMAN_MODEL])
+        ):
+            raise ValueError("Live evaluation requires real provider selections and disabled mock mode")
+    else:
+        models = [ModelSpec(provider="mock", model=f"fixture-{i}") for i in range(3)]
+    memory_mode = "reviewed snapshot" if reviewed_memory else "empty" if live else "synthetic oracle"
     experiment_id = uid()
     tracker = store or Store("sqlite:///:memory:", initialize=True)
     records = []
     for example in examples:
         provider = FixtureProvider(example)
         factory = get_provider if live else lambda _, provider=provider: provider
-        if live:
-            from app.orchestration.schemas import configured_models
-
-            models = configured_models()[:3]
-        else:
-            models = [ModelSpec(provider="mock", model=f"fixture-{i}") for i in range(3)]
         for system in ["A", "B", "C", "D", "E", "F"]:
             # Isolation prevents cross-ablation evidence or memory leakage.
             work = Store("sqlite:///:memory:", initialize=True)
-            cache.entries.clear()
             start = time.perf_counter()
             relation_found, review_required, explanation, tokens, cost = False, False, 0.0, 0, 0.0
             confidence = 0.5
             result = None
-            if system == "A":
-                response = await factory(models[0].provider).generate(
-                    models[0].model, [{"role": "user", "content": example.question}]
-                )
-                normalized = normalize_response(response, example.id)
-                prediction = [c.claim_text for c in extract_claims(normalized) if c.claim_type != "uncertain"]
-                cost, tokens = response.cost, (response.input_tokens or 0) + (response.output_tokens or 0)
-            elif system == "B":
-                if live:
-                    first, second, final, _ = await run_full_council(example.question)
-                    cost = None  # baseline format lacks comprehensive billing metadata
-                else:
-
-                    async def query_model(model, messages, example=example, **kwargs):
-                        text = messages[-1]["content"]
-                        if "Chairman of an LLM Council" in text:
-                            return {"content": example.fixture_responses[0]}
-                        return {"content": example.fixture_responses[0]}
-
-                    async def query_parallel(model_ids, messages, example=example):
-                        ranking = "evaluating different responses" in messages[-1]["content"]
-                        return {
-                            m: {
-                                "content": "FINAL RANKING:\n1. Response A\n2. Response B\n3. Response C\n4. Response D"
-                                if ranking
-                                else example.fixture_responses[i % 3]
-                            }
-                            for i, m in enumerate(model_ids)
-                        }
-
-                    with (
-                        patch("backend.council.query_model", query_model),
-                        patch("backend.council.query_models_parallel", query_parallel),
-                    ):
-                        first, second, final, _ = await run_full_council(example.question)
-                normalized = normalize_response(
-                    ProviderResult("baseline", "chairman", final["response"], uid()), example.id
-                )
-                prediction = [c.claim_text for c in extract_claims(normalized) if c.claim_type != "uncertain"]
+            if system in {"A", "B"}:
+                prediction, failed, tokens, cost = await baseline_trial(system, example, models, factory, live)
             else:
-                if system == "F" and example.ground_truth:
+                if system == "F" and reviewed_memory:
+                    reviewer = ReviewService(work)
+                    for entry in reviewed_memory:
+                        item = work.create_knowledge(entry.claim)
+                        reviewer.review(
+                            item["knowledge_id"],
+                            ReviewRequest(action="ACCEPT", expected_version=1, **entry.model_dump(exclude={"claim"})),
+                        )
+                elif system == "F" and not live and example.ground_truth:
                     # Repeated-fact memory experiment, explicitly an oracle development reviewer.
                     item = work.create_knowledge(example.fixture_responses[0])
                     ReviewService(work).review(
@@ -139,7 +210,11 @@ async def evaluate(dataset, output, store=None, live=False, limit=None, consiste
                     domain=example.domain,
                 )
                 engine = ConsensusEngine(
-                    work, provider_factory=factory, confidence_enabled=system in {"E", "F"}
+                    work,
+                    provider_factory=factory,
+                    confidence_enabled=system in {"E", "F"},
+                    use_cache=False,
+                    retrieval=RetrievalService(work, vectors=MemoryVectors()),
                 )
                 result = await engine.run(request)
                 ids = set(result["synthesis"]["supporting_claim_ids"])
@@ -154,44 +229,54 @@ async def evaluate(dataset, output, store=None, live=False, limit=None, consiste
                     )
                     / 5
                 )
-                tokens = result["execution"]["input_tokens"] + result["execution"]["output_tokens"]
+                execution = result["execution"]
+                tokens = execution["input_tokens"] + execution["output_tokens"] if execution["usage_complete"] else None
                 cost = result["execution"]["total_cost"]
+                failed = not any(response["provider"] != "knowledge" for response in result["responses"])
+                if failed:
+                    prediction = []
             latency = time.perf_counter() - start
-            correct = correctness(prediction, example.expected_claims, example.ground_truth is None)
+            correct = not failed and correctness(prediction, example.expected_claims, example.ground_truth is None)
             pred, gold = (
                 {normalize_claim(t) for t in prediction},
                 {normalize_claim(t) for t in example.expected_claims},
             )
-            contradiction_expected = example.category != "ambiguous"
+            # Fixture labels describe the scripted responses only, not live generations.
+            contradiction_expected = (
+                example.fixture_contradiction_expected
+                if not live and not failed and result is not None and not (system == "F" and reviewed_memory)
+                else None
+            )
             consistency = None
             repeat_tokens, repeat_cost, repeat_latency = 0, 0.0, 0.0
-            if result is not None and consistency_repeats > 1:
-                repeated_sets = [pred]
+            if consistency_repeats > 1:
+                matches = 0
                 for _ in range(consistency_repeats - 1):
-                    repeated = await engine.run(request)
-                    repeat_tokens += (
-                        repeated["execution"]["input_tokens"] + repeated["execution"]["output_tokens"]
-                    )
-                    repeat_latency += repeated["execution"]["latency"]
-                    if repeated["execution"]["total_cost"] is None:
-                        repeat_cost = None
-                    elif repeat_cost is not None:
-                        repeat_cost += repeated["execution"]["total_cost"]
-                    selected = set(repeated["synthesis"]["supporting_claim_ids"])
-                    repeated_sets.append(
-                        {
-                            normalize_claim(c["claim_text"])
-                            for c in repeated["claims"]
-                            if c["claim_id"] in selected
-                        }
-                    )
-                consistency = sum(p == pred for p in repeated_sets[1:]) / (len(repeated_sets) - 1)
+                    repeat_start = time.perf_counter()
+                    if result is None:
+                        claims, repeat_failed, usage, price = await baseline_trial(system, example, models, factory, live)
+                    else:
+                        repeated = await engine.run(request)
+                        execution = repeated["execution"]
+                        usage = execution["input_tokens"] + execution["output_tokens"] if execution["usage_complete"] else None
+                        price = execution["total_cost"]
+                        repeat_failed = not any(r["provider"] != "knowledge" for r in repeated["responses"])
+                        selected = set(repeated["synthesis"]["supporting_claim_ids"])
+                        claims = [claim["claim_text"] for claim in repeated["claims"] if claim["claim_id"] in selected]
+                    repeat_tokens = repeat_tokens + usage if repeat_tokens is not None and usage is not None else None
+                    repeat_cost = repeat_cost + price if repeat_cost is not None and price is not None else None
+                    repeat_latency += time.perf_counter() - repeat_start
+                    matches += int(not failed and not repeat_failed and {normalize_claim(c) for c in claims} == pred)
+                consistency = matches / (consistency_repeats - 1)
             records.append(
                 {
                     "example_id": example.id,
+                    "question": example.question,
                     "system": system,
                     "category": example.category,
                     "prediction": sorted(pred),
+                    "answer_claims": prediction,
+                    "system_error": failed,
                     "correct": correct,
                     "score": confidence,
                     "latency": latency,
@@ -200,9 +285,11 @@ async def evaluate(dataset, output, store=None, live=False, limit=None, consiste
                     "claim_tp": len(pred & gold),
                     "claim_fp": len(pred - gold),
                     "claim_fn": len(gold - pred),
-                    "contradiction_tp": int(relation_found and contradiction_expected),
-                    "contradiction_fp": int(relation_found and not contradiction_expected),
-                    "contradiction_fn": int(not relation_found and contradiction_expected),
+                    "contradiction_labeled": contradiction_expected is not None,
+                    "contradiction_tp": int(relation_found and contradiction_expected is True),
+                    "contradiction_fp": int(relation_found and contradiction_expected is False),
+                    "contradiction_fn": int(not relation_found and contradiction_expected is True),
+                    "error_detection_labeled": result is not None and not failed,
                     "error_detect_tp": int(review_required and not correct),
                     "error_detect_fp": int(review_required and correct),
                     "error_detect_fn": int(not review_required and not correct),
@@ -240,30 +327,37 @@ async def evaluate(dataset, output, store=None, live=False, limit=None, consiste
     artifact = {
         "experiment_id": experiment_id,
         "dataset": str(path),
-        "dataset_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "dataset_sha256": hashlib.sha256(raw).hexdigest(),
         "configuration": {
             "live": live,
+            "development_dataset_sha256": hashlib.sha256(development_bytes).hexdigest() if development_bytes else None,
             "models": [m.model_dump() for m in models],
+            "fallback": fallback.model_dump() if fallback else None,
+            "baseline_council_models": COUNCIL_MODELS if live else None,
+            "baseline_chairman": CHAIRMAN_MODEL if live else None,
             "prompt_version": "answer-v1",
+            "embedding_method": result["explanation"]["embedding_method"],
+            "nli_method": result["explanation"]["nli_method"],
             "consistency_repeats": consistency_repeats,
+            "memory_mode": memory_mode,
+            "reviewed_memory_sha256": hashlib.sha256(memory_bytes).hexdigest() if reviewed_memory else None,
             "systems": {
                 "A": "single model",
                 "B": "original council",
                 "C": "claim comparison/weighted aggregation",
                 "D": "C + evidence",
                 "E": "D + confidence",
-                "F": "E + prior validated memory",
+                "F": f"E with {memory_mode} memory",
             },
         },
         "summary": summary,
         "records": records,
         "limitations": [
-            "Controlled synthetic dataset; not statistically significant.",
-            "Mock provider and chairman decisions exercise the harness; they do not estimate real model performance.",
-            "System F uses an oracle development reviewer on repeated facts; evaluate real human review separately.",
+            "Exact claim-set scoring does not resolve equivalent paraphrases or evidence quality.",
+            "Reviewed memory must be frozen without access to the evaluation labels. The runner records its hash.",
             "A/B score 0.5 is an uninformative baseline, not a model confidence prediction.",
             "Explanation completeness is a schema-coverage proxy, not a human quality judgment.",
-        ],
+        ] + ([] if live else ["Fixture provider runs do not establish real-model performance."]),
     }
     with tracker.engine.begin() as conn:
         conn.execute(insert(db.experiments).values(id=experiment_id, payload=artifact))
